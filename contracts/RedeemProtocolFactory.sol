@@ -23,11 +23,8 @@ contract RedeemProtocolFactory is AccessControl {
     RedeemProtocolType.Fee public defaultSetupFee;
     RedeemProtocolType.Fee public defaultUpdateFee;
     RedeemProtocolType.Fee public defaultBaseRedeemFee;
-    // NOTE: designate fee only defines amount, token type is defined in default fee
-    // you must set both designateFeeToken and one of amount (setup, update)
     mapping(address => RedeemProtocolType.Fee) public designateSetupFee;
     mapping(address => RedeemProtocolType.Fee) public designateUpdateFee;
-    // mapping(address => address) public designateFeeToken;
     mapping(address => RedeemProtocolType.Fee) public designateBaseRedeemFee;
     mapping(address => bool) public validRedeemToken;
 
