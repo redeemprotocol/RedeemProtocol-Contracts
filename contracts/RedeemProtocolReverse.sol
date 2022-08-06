@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/metatx/ERC2771Context.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./libraries/RedeemProtocolType.sol";
 import "./interfaces/IERC721.sol";
 import "./interfaces/IERC721Burnable.sol";
@@ -14,9 +14,7 @@ import "./interfaces/IERC20.sol";
 import "./interfaces/IERC20Permit.sol";
 
 // NOTE: probably don't use ERC2771Context since _trustedForwarder is immutable
-contract RedeemProtocolReverse is AccessControl, ERC2771Context, Pausable {
-    using SafeMath for uint256;
-
+contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context, Pausable {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN");
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
@@ -42,6 +40,7 @@ contract RedeemProtocolReverse is AccessControl, ERC2771Context, Pausable {
 
         _grantRole(ADMIN_ROLE, reverseOp);
         _grantRole(OPERATOR_ROLE, reverseOp);
+        _setRoleAdmin(ADMIN_ROLE, ADMIN_ROLE);
         _setRoleAdmin(OPERATOR_ROLE, ADMIN_ROLE);
 
         updateFee = _updateFee;
@@ -56,7 +55,7 @@ contract RedeemProtocolReverse is AccessControl, ERC2771Context, Pausable {
     // end users methods
     // NOTE: do we really need this function?
     function getRedeemFee() public view returns (address, uint256) {
-        uint256 total = redeemAmount.add(lockedBalance[baseRedeemFee.token]).add(freeBalance[baseRedeemFee.token]);
+        uint256 total = redeemAmount + lockedBalance[baseRedeemFee.token] + freeBalance[baseRedeemFee.token];
         if (total < baseRedeemFee.amount) {
             return (baseRedeemFee.token, baseRedeemFee.amount);
         }
@@ -66,35 +65,36 @@ contract RedeemProtocolReverse is AccessControl, ERC2771Context, Pausable {
 
     function _payFee(uint256 _redeemFee) private {
         if (_redeemFee < baseRedeemFee.amount) {
-            uint256 gap = baseRedeemFee.amount.sub(_redeemFee);
+            uint256 gap = baseRedeemFee.amount - _redeemFee;
             uint256 deductLockedAmount = lockedBalance[baseRedeemFee.token] < gap ? lockedBalance[baseRedeemFee.token] : gap;
-            uint256 deductFreeAmount = deductLockedAmount < gap.sub(deductLockedAmount) ? freeBalance[baseRedeemFee.token] : gap.sub(deductLockedAmount);
+            uint256 deductFreeAmount = deductLockedAmount < gap - deductLockedAmount ? freeBalance[baseRedeemFee.token] : gap - deductLockedAmount;
             // prevent underflow
             require(lockedBalance[baseRedeemFee.token] >= deductLockedAmount, "locked balance is not enough");
             require(freeBalance[baseRedeemFee.token] >= deductFreeAmount, "free balance is not enough");
 
-            lockedBalance[baseRedeemFee.token] = lockedBalance[baseRedeemFee.token].sub(deductLockedAmount);
-            freeBalance[baseRedeemFee.token] = freeBalance[baseRedeemFee.token].sub(deductFreeAmount);
+            lockedBalance[baseRedeemFee.token] = lockedBalance[baseRedeemFee.token] - deductLockedAmount;
+            freeBalance[baseRedeemFee.token] = freeBalance[baseRedeemFee.token] - deductFreeAmount;
         } else {
-            freeBalance[baseRedeemFee.token] = freeBalance[baseRedeemFee.token].add(_redeemFee.sub(baseRedeemFee.amount));
+            freeBalance[baseRedeemFee.token] = freeBalance[baseRedeemFee.token] + _redeemFee - baseRedeemFee.amount;
         }
 
         // NOTE: do we really need this check?
-        require(IERC20(baseRedeemFee.token).balanceOf(address(this)) >= lockedBalance[baseRedeemFee.token].add(freeBalance[baseRedeemFee.token]), "wrong balance");
+        require(IERC20(baseRedeemFee.token).balanceOf(address(this)) >= lockedBalance[baseRedeemFee.token] + freeBalance[baseRedeemFee.token], "wrong balance");
     }
 
     // NOTE: redeem fee also support meta tx?
     // NOTE: should check isApprovedOrOwner?
     function redeemWithMark(address _contractAddr, uint256 _tokenId, bytes32 _customId) external whenNotPaused {
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Mark, "redeem method is not mark");
-        require(_validateERC721(_contractAddr), "not valid ERC721");
+        require(isRedeemed[_contractAddr][_tokenId] == false, "token has been redeemed");
         require(IERC721(_contractAddr).ownerOf(_tokenId) == _msgSender(), "not token owner");
+        require(_validateERC721(_contractAddr), "not valid ERC721");
 
         (, uint256 redeemFee) = getRedeemFee();
-        IERC20(baseRedeemFee.token).transferFrom(_msgSender(), address(this), redeemFee);
         _payFee(redeemFee);
-
         isRedeemed[_contractAddr][_tokenId] = true;
+
+        IERC20(baseRedeemFee.token).transferFrom(_msgSender(), address(this), redeemFee);
         emit Redeemed(_contractAddr, _tokenId, RedeemProtocolType.RedeemMethod.Mark, _msgSender(), _customId);
     }
 
@@ -108,28 +108,30 @@ contract RedeemProtocolReverse is AccessControl, ERC2771Context, Pausable {
         bytes32 _s
     ) external whenNotPaused {
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Mark, "redeem method is not mark");
-        require(_validateERC721(_contractAddr), "not valid ERC721");
+        require(isRedeemed[_contractAddr][_tokenId] == false, "token has been redeemed");
         require(IERC721(_contractAddr).ownerOf(_tokenId) == _msgSender(), "not token owner");
+        require(_validateERC721(_contractAddr), "not valid ERC721");
 
         (, uint256 redeemFee) = getRedeemFee();
+        _payFee(redeemFee);
+        isRedeemed[_contractAddr][_tokenId] = true;
+
         IERC20Permit(baseRedeemFee.token).permit(_msgSender(), address(this), redeemFee, _deadline, _v, _r, _s);
         IERC20Permit(baseRedeemFee.token).transferFrom(_msgSender(), address(this), redeemFee);
-        _payFee(redeemFee);
-
-        isRedeemed[_contractAddr][_tokenId] = true;
         emit Redeemed(_contractAddr, _tokenId, RedeemProtocolType.RedeemMethod.Mark, _msgSender(), _customId);
     }
 
     function redeemWithTransfer(address _contractAddr, uint256 _tokenId, bytes32 _customId) external whenNotPaused {
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Transfer, "redeem method is not transfer");
+        require(isRedeemed[_contractAddr][_tokenId] == false, "token has been redeemed");
         require(_validateERC721(_contractAddr), "not valid ERC721");
 
         (,uint256 redeemFee) = getRedeemFee();
-        IERC20(baseRedeemFee.token).transferFrom(_msgSender(), address(this), redeemFee);
         _payFee(redeemFee);
-
-        IERC721(_contractAddr).safeTransferFrom(_msgSender(), tokenReceiver, _tokenId);
         isRedeemed[_contractAddr][_tokenId] = true;
+
+        IERC20(baseRedeemFee.token).transferFrom(_msgSender(), address(this), redeemFee);
+        IERC721(_contractAddr).safeTransferFrom(_msgSender(), tokenReceiver, _tokenId);
         emit Redeemed(_contractAddr, _tokenId, RedeemProtocolType.RedeemMethod.Transfer, _msgSender(), _customId);
     }
 
@@ -143,28 +145,30 @@ contract RedeemProtocolReverse is AccessControl, ERC2771Context, Pausable {
         bytes32 _s
     ) external whenNotPaused {
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Transfer, "redeem method is not transfer");
+        require(isRedeemed[_contractAddr][_tokenId] == false, "token has been redeemed");
         require(_validateERC721(_contractAddr), "not valid ERC721");
 
         (, uint256 redeemFee) = getRedeemFee();
+        _payFee(redeemFee);
+        isRedeemed[_contractAddr][_tokenId] = true;
+
         IERC20Permit(baseRedeemFee.token).permit(_msgSender(), address(this), redeemFee, _deadline, _v, _r, _s);
         IERC20Permit(baseRedeemFee.token).transferFrom(_msgSender(), address(this), redeemFee);
-        _payFee(redeemFee);
-
         IERC721(_contractAddr).safeTransferFrom(_msgSender(), tokenReceiver, _tokenId);
-        isRedeemed[_contractAddr][_tokenId] = true;
         emit Redeemed(_contractAddr, _tokenId, RedeemProtocolType.RedeemMethod.Transfer, _msgSender(), _customId);
     }
 
     function redeemWithBurn(address _contractAddr, uint256 _tokenId, bytes32 _customId) external whenNotPaused {
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Burn, "redeem method is not burn");
+        require(isRedeemed[_contractAddr][_tokenId] == false, "token has been redeemed");
         require(_validateERC721(_contractAddr), "not valid ERC721");
 
         (, uint256 redeemFee) = getRedeemFee();
-        IERC20(baseRedeemFee.token).transferFrom(_msgSender(), address(this), redeemFee);
         _payFee(redeemFee);
-
-        IERC721Burnable(_contractAddr).burn(_tokenId);
         isRedeemed[_contractAddr][_tokenId] = true;
+
+        IERC20(baseRedeemFee.token).transferFrom(_msgSender(), address(this), redeemFee);
+        IERC721Burnable(_contractAddr).burn(_tokenId);
         emit Redeemed(_contractAddr, _tokenId, RedeemProtocolType.RedeemMethod.Burn, _msgSender(), _customId);
     }
 
@@ -178,15 +182,16 @@ contract RedeemProtocolReverse is AccessControl, ERC2771Context, Pausable {
         bytes32 _s
     ) external whenNotPaused {
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Burn, "redeem method is not burn");
+        require(isRedeemed[_contractAddr][_tokenId] == false, "token has been redeemed");
         require(_validateERC721(_contractAddr), "not valid ERC721");
 
         (, uint256 redeemFee) = getRedeemFee();
+        _payFee(redeemFee);
+        isRedeemed[_contractAddr][_tokenId] = true;
+
         IERC20Permit(baseRedeemFee.token).permit(_msgSender(), address(this), redeemFee, _deadline, _v, _r, _s);
         IERC20Permit(baseRedeemFee.token).transferFrom(_msgSender(), address(this), redeemFee);
-        _payFee(redeemFee);
-
         IERC721Burnable(_contractAddr).burn(_tokenId);
-        isRedeemed[_contractAddr][_tokenId] = true;
         emit Redeemed(_contractAddr, _tokenId, RedeemProtocolType.RedeemMethod.Burn, _msgSender(), _customId);
     }
 
@@ -205,9 +210,10 @@ contract RedeemProtocolReverse is AccessControl, ERC2771Context, Pausable {
         if (_method == RedeemProtocolType.RedeemMethod.Transfer) {
             require(_tokenReceiver != address(0), "not valid token receiver");
         }
+        _updateReverse(_method, _redeemAmount, _erc721, _tokenReceiver);
+
         // NOTE: transfer fee to reverse contract or factory contract?
         IERC20(updateFee.token).transferFrom(msg.sender, address(this), updateFee.amount);
-        _updateReverse(_method, _redeemAmount, _erc721, _tokenReceiver);
     }
 
     function updateReverse(
@@ -228,9 +234,10 @@ contract RedeemProtocolReverse is AccessControl, ERC2771Context, Pausable {
         if (_method == RedeemProtocolType.RedeemMethod.Transfer) {
             require(_tokenReceiver != address(0), "not valid token receiver");
         }
+        _updateReverse(_method, _redeemAmount, _erc721, _tokenReceiver);
+
         IERC20Permit(updateFee.token).permit(msg.sender, address(this), updateFee.amount, _deadline, _v, _r, _s);
         IERC20Permit(updateFee.token).transferFrom(msg.sender, address(this), updateFee.amount);
-        _updateReverse(_method, _redeemAmount, _erc721, _tokenReceiver);
     }
 
     function _updateReverse(
@@ -250,8 +257,9 @@ contract RedeemProtocolReverse is AccessControl, ERC2771Context, Pausable {
         grantRole(OPERATOR_ROLE, _operator);
     }
 
-    function withdraw(address _token, uint256 _amount, address _receiver) external onlyRole(ADMIN_ROLE) whenNotPaused {
+    function withdraw(address _token, uint256 _amount, address _receiver) external nonReentrant onlyRole(ADMIN_ROLE) whenNotPaused {
         require(freeBalance[_token] >= _amount, "not enough balance");
+        freeBalance[_token] -= _amount;
         IERC20(_token).transferFrom(address(this), _receiver, _amount);
     }
 
@@ -283,9 +291,13 @@ contract RedeemProtocolReverse is AccessControl, ERC2771Context, Pausable {
         redeemAmount = _amount;
     }
 
-    function withdrawByFactory(address _token, uint256 _amount, address _receiver) external onlyFactory {
-        require(IERC20(_token).balanceOf(address(this)).sub(_amount) >= lockedBalance[_token].add(freeBalance[_token]), "wrong balance");
+    function withdrawByFactory(address _token, uint256 _amount, address _receiver) external nonReentrant onlyFactory {
+        require(IERC20(_token).balanceOf(address(this)) - _amount >= lockedBalance[_token] + freeBalance[_token], "wrong balance");
         IERC20(_token).transferFrom(address(this), _receiver, _amount);
+    }
+
+    function depositByFactory(address _token, uint256 _amount) external nonReentrant onlyFactory {
+        lockedBalance[_token] += _amount;
     }
 
     // others

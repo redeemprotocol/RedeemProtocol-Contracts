@@ -2,15 +2,16 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Create2.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
-import "./RedeemProtocolReverse.sol";
 import { RedeemProtocolType } from "./libraries/RedeemProtocolType.sol";
 import "./interfaces/IERC20.sol";
 import "./interfaces/IERC20Permit.sol";
 import "./interfaces/IERC721Ownable.sol";
+import "./RedeemProtocolReverse.sol";
 
-contract RedeemProtocolFactory is AccessControl {
+contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
     using Counters for Counters.Counter;
     using RedeemProtocolType for RedeemProtocolType.Fee;
     
@@ -32,7 +33,6 @@ contract RedeemProtocolFactory is AccessControl {
 
     event ReverseCreated(address indexed creator, address reverse);
 
-    // NOTE: implement paybale function for receiving ETH to deploy reverse?
     constructor(
         RedeemProtocolType.Fee memory _defaultSetupFee,
         RedeemProtocolType.Fee memory _defaultUpdateFee,
@@ -40,6 +40,7 @@ contract RedeemProtocolFactory is AccessControl {
     ) {
         _grantRole(ADMIN_ROLE, msg.sender);
         _grantRole(OPERATOR_ROLE, msg.sender);
+        _setRoleAdmin(ADMIN_ROLE, ADMIN_ROLE);
         _setRoleAdmin(OPERATOR_ROLE, ADMIN_ROLE);
         _setRoleAdmin(REVERSE_OPERATOR, OPERATOR_ROLE);
 
@@ -71,6 +72,24 @@ contract RedeemProtocolFactory is AccessControl {
             require(_tokenReceiver != address(0), "tokenReceiver must be set");
         }
 
+        RedeemProtocolType.Fee memory updateFee = defaultUpdateFee;
+        if (designateUpdateFee[msg.sender].token != address(0)) {
+            updateFee.token = designateUpdateFee[msg.sender].token;
+            updateFee.amount = designateUpdateFee[msg.sender].amount;
+        }
+        RedeemProtocolType.Fee memory baseRedeemFee = designateBaseRedeemFee[msg.sender].token == address(0) ? defaultBaseRedeemFee : designateBaseRedeemFee[msg.sender];
+        // bytecode must be encoded with abi.encodePacked
+        bytes memory bytecode = abi.encodePacked(type(RedeemProtocolReverse).creationCode, abi.encode(msg.sender, updateFee, baseRedeemFee));
+        uint256 chainId;
+        assembly {
+            chainId := chainid()
+        }
+        bytes32 salt = keccak256(abi.encode(msg.sender, chainId, reverseSalt.current()));
+        reverseSalt.increment();
+        reverse = Create2.deploy(0, salt, bytecode);
+        RedeemProtocolReverse(reverse).initialize(_method, _redeemAmount, _erc721, _tokenReceiver);
+        allReverses.push(reverse);
+
         // avoid stack too deep error
         {
         RedeemProtocolType.Fee memory setupFee = defaultSetupFee;
@@ -80,21 +99,6 @@ contract RedeemProtocolFactory is AccessControl {
         }
         IERC20(setupFee.token).transferFrom(msg.sender, address(this), setupFee.amount);
         }
-
-        RedeemProtocolType.Fee memory updateFee = defaultUpdateFee;
-        if (designateUpdateFee[msg.sender].token != address(0)) {
-            updateFee.token = designateUpdateFee[msg.sender].token;
-            updateFee.amount = designateUpdateFee[msg.sender].amount;
-        }
-        RedeemProtocolType.Fee memory baseRedeemFee = designateBaseRedeemFee[msg.sender].token == address(0) ? defaultBaseRedeemFee : designateBaseRedeemFee[msg.sender];
-        bytes memory bytecode = abi.encodePacked(type(RedeemProtocolReverse).creationCode, abi.encode(msg.sender, updateFee, baseRedeemFee));
-        // NOTE: use counter as reverse ID?
-        bytes32 salt = keccak256(abi.encodePacked(reverseSalt.current()));
-        reverseSalt.increment();
-        reverse = Create2.deploy(0, salt, bytecode);
-        RedeemProtocolReverse(reverse).initialize(_method, _redeemAmount, _erc721, _tokenReceiver);
-
-        allReverses.push(reverse);
         emit ReverseCreated(msg.sender, reverse);
     }
 
@@ -123,6 +127,27 @@ contract RedeemProtocolFactory is AccessControl {
 
         // avoid stack too deep error
         {
+        RedeemProtocolType.Fee memory baseRedeemFee = designateBaseRedeemFee[msg.sender].token == address(0) ? defaultBaseRedeemFee : designateBaseRedeemFee[msg.sender];
+        RedeemProtocolType.Fee memory updateFee = defaultUpdateFee;
+        if (designateUpdateFee[msg.sender].token != address(0)) {
+            updateFee.token = designateUpdateFee[msg.sender].token;
+            updateFee.amount = designateUpdateFee[msg.sender].amount;
+        }
+        // bytecode must be encoded with abi.encodePacked
+        bytes memory bytecode = abi.encodePacked(type(RedeemProtocolReverse).creationCode, abi.encode(msg.sender, updateFee, baseRedeemFee));
+        uint256 chainId;
+        assembly {
+            chainId := chainid()
+        }
+        bytes32 salt = keccak256(abi.encode(msg.sender, chainId, reverseSalt.current()));
+        reverseSalt.increment();
+        reverse = Create2.deploy(0, salt, bytecode);
+        }
+        RedeemProtocolReverse(reverse).initialize(_method, _redeemAmount, _erc721, _tokenReceiver);
+        allReverses.push(reverse);
+
+        // avoid stack too deep error
+        {
         RedeemProtocolType.Fee memory setupFee = defaultSetupFee;
         if (designateSetupFee[msg.sender].token != address(0)) {
             setupFee.token = designateSetupFee[msg.sender].token;
@@ -131,20 +156,6 @@ contract RedeemProtocolFactory is AccessControl {
         IERC20Permit(setupFee.token).permit(msg.sender, address(this), setupFee.amount, _deadline, _v, _r, _s);
         IERC20Permit(setupFee.token).transferFrom(msg.sender, address(this), setupFee.amount);
         }
-
-        RedeemProtocolType.Fee memory baseRedeemFee = designateBaseRedeemFee[msg.sender].token == address(0) ? defaultBaseRedeemFee : designateBaseRedeemFee[msg.sender];
-        RedeemProtocolType.Fee memory updateFee = defaultUpdateFee;
-        if (designateUpdateFee[msg.sender].token != address(0)) {
-            updateFee.token = designateUpdateFee[msg.sender].token;
-            updateFee.amount = designateUpdateFee[msg.sender].amount;
-        }
-        bytes memory bytecode = abi.encodePacked(type(RedeemProtocolReverse).creationCode, abi.encode(msg.sender, updateFee, baseRedeemFee));
-        bytes32 salt = keccak256(abi.encodePacked(reverseSalt.current()));
-        reverseSalt.increment();
-        reverse = Create2.deploy(0, salt, bytecode);
-        RedeemProtocolReverse(reverse).initialize(_method, _redeemAmount, _erc721, _tokenReceiver);
-
-        allReverses.push(reverse);
         emit ReverseCreated(msg.sender, reverse);
     }
 
@@ -215,12 +226,17 @@ contract RedeemProtocolFactory is AccessControl {
         RedeemProtocolReverse(_reverse).pause();
     }
 
-    function withdraw(address _token, uint256 _amount, address _receiver) external onlyRole(ADMIN_ROLE) {
+    function withdraw(address _token, uint256 _amount, address _receiver) external nonReentrant onlyRole(ADMIN_ROLE) {
         require(IERC20(_token).balanceOf(address(this)) >= _amount, "not enough balance");
         IERC20(_token).transferFrom(address(this), _receiver, _amount);
     }
 
-    function withdrawReverse(address _reverse, address _token, uint256 _amount, address _receiver) external onlyRole(ADMIN_ROLE) {
+    function withdrawReverse(address _reverse, address _token, uint256 _amount, address _receiver) external nonReentrant onlyRole(ADMIN_ROLE) {
         RedeemProtocolReverse(_reverse).withdrawByFactory(_token, _amount, _receiver);
+    }
+
+    function depositReverse(address _reverse, address _token, uint256 _amount) external nonReentrant onlyRole(ADMIN_ROLE) {
+        RedeemProtocolReverse(_reverse).depositByFactory(_token, _amount);
+        IERC20(_token).transferFrom(msg.sender, _reverse, _amount);
     }
 }
