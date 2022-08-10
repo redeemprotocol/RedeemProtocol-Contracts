@@ -691,7 +691,7 @@ describe("RedeemProtocolReverse", function () {
       await expect(reverse.connect(reverseOp).updateReverse(
         1, ethers.utils.parseEther("1"), [erc721B.address], ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32,
-      )).to.revertedWith("must be owner of ERC721");
+      )).to.revertedWith("not ERC721 owner");
     });
 
     it("should be reverted when not owner of erc721, transfer", async function () {
@@ -699,7 +699,7 @@ describe("RedeemProtocolReverse", function () {
       await expect(reverse.connect(reverseOp).updateReverse(
         2, ethers.utils.parseEther("1"), [erc721B.address], ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32,
-      )).to.revertedWith("must be owner of ERC721");
+      )).to.revertedWith("not ERC721 owner");
     });
 
     it("should be reverted when tokenReceiver is zero address, transfer", async function () {
@@ -709,7 +709,7 @@ describe("RedeemProtocolReverse", function () {
       await expect(reverse.connect(reverseOp).updateReverse(
         1, ethers.utils.parseEther("1"), [erc721.address], ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32,
-      )).to.revertedWith("not valid token receiver");
+      )).to.revertedWith("tokenReceiver must be set");
     });
   });
 

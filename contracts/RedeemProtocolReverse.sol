@@ -102,7 +102,7 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         if (_customId[0] == 0) {
             _customId = DEFAULT_CUSTOM_ID;
         }
-        require(redeemMethod == RedeemProtocolType.RedeemMethod.Mark, "redeem method is not mark");
+        require(redeemMethod == RedeemProtocolType.RedeemMethod.Mark, "method is not mark");
         require(isRedeemed[_contractAddr][_tokenId][_customId] == false, "token has been redeemed");
         require(IERC721(_contractAddr).ownerOf(_tokenId) == _msgSender(), "not token owner");
         require(_validateERC721(_contractAddr), "not valid ERC721");
@@ -132,9 +132,9 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         if (_customId[0] == 0) {
             _customId = DEFAULT_CUSTOM_ID;
         }
-        require(redeemMethod == RedeemProtocolType.RedeemMethod.Transfer, "redeem method is not transfer");
+        require(redeemMethod == RedeemProtocolType.RedeemMethod.Transfer, "method is not transfer");
         require(isRedeemed[_contractAddr][_tokenId][_customId] == false, "token has been redeemed");
-        require(_validateERC721(_contractAddr), "not valid ERC721");
+        require(_validateERC721(_contractAddr), "not acceptable ERC721");
 
         (, uint256 redeemFee) = getRedeemFee();
         _payFee(redeemFee);
@@ -162,9 +162,9 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         if (_customId[0] == 0) {
             _customId = DEFAULT_CUSTOM_ID;
         }
-        require(redeemMethod == RedeemProtocolType.RedeemMethod.Burn, "redeem method is not burn");
+        require(redeemMethod == RedeemProtocolType.RedeemMethod.Burn, "method is not burn");
         require(isRedeemed[_contractAddr][_tokenId][_customId] == false, "token has been redeemed");
-        require(_validateERC721(_contractAddr), "not valid ERC721");
+        require(_validateERC721(_contractAddr), "not acceptable ERC721");
 
         (, uint256 redeemFee) = getRedeemFee();
         _payFee(redeemFee);
@@ -192,11 +192,11 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
     ) external onlyRole(OPERATOR) whenNotPaused {
         if (_method == RedeemProtocolType.RedeemMethod.Transfer || _method == RedeemProtocolType.RedeemMethod.Burn) {
             for (uint i = 0; i < _erc721.length; i++) {
-                require(IERC721Ownable(_erc721[i]).owner() == msg.sender, "must be owner of ERC721");
+                require(IERC721Ownable(_erc721[i]).owner() == msg.sender, "not ERC721 owner");
             }
         }
         if (_method == RedeemProtocolType.RedeemMethod.Transfer) {
-            require(_tokenReceiver != address(0), "not valid token receiver");
+            require(_tokenReceiver != address(0), "tokenReceiver must be set");
         }
         _updateReverse(_method, _redeemAmount, _erc721, _tokenReceiver);
 

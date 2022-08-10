@@ -72,7 +72,7 @@ describe("RedeemProtocolFactory", function() {
   }
 
   async function deployFactoryWithRole() {
-    const [admin, op, reverseOp, otherAccount] = await ethers.getSigners();
+    const [admin, op, reverseOp, otherAccount, rootCreator] = await ethers.getSigners();
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20A = await erc20Factory.deploy();
     const erc20B = await erc20Factory.deploy();
@@ -95,9 +95,10 @@ describe("RedeemProtocolFactory", function() {
       }
     );
     await factory.grantRole(ethers.utils.id("OPERATOR"), op.address);
-    await factory.grantRole(ethers.utils.id("REVERSE_OPERATOR"), reverseOp.address);
+    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), reverseOp.address);
+    await factory.grantRole(ethers.utils.id("ROOT_CREATOR"), rootCreator.address);
 
-    return { factory, admin, op, reverseOp, otherAccount, erc20A, erc20B, erc721A, erc721B };
+    return { factory, admin, op, reverseOp, otherAccount, rootCreator, erc20A, erc20B, erc721A, erc721B };
   }
 
   async function deployFactoryWithERC20Permit() {
@@ -122,7 +123,7 @@ describe("RedeemProtocolFactory", function() {
       }
     );
     await factory.grantRole(ethers.utils.id("OPERATOR"), op.address);
-    await factory.grantRole(ethers.utils.id("REVERSE_OPERATOR"), reverseOp.address);
+    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), reverseOp.address);
 
     return { factory, admin, op, reverseOp, otherAccount, erc20, erc721 };
   }
@@ -149,9 +150,9 @@ describe("RedeemProtocolFactory", function() {
       expect(await factory.getRoleAdmin(ethers.utils.id("OPERATOR"))).to.equal(ethers.utils.id("ADMIN"));
     });
 
-    it("should have REVERSE_OPERATOR role admin for OPERATOR", async function () {
+    it("should have REVERSE_CREATOR role admin for OPERATOR", async function () {
       const { factory } = await loadFixture(deployFactory);
-      expect(await factory.getRoleAdmin(ethers.utils.id("REVERSE_OPERATOR"))).to.equal(ethers.utils.id("OPERATOR"));
+      expect(await factory.getRoleAdmin(ethers.utils.id("REVERSE_CREATOR"))).to.equal(ethers.utils.id("OPERATOR"));
     });
 
     it("should not have ADMIN role for other account", async function () {
@@ -164,9 +165,9 @@ describe("RedeemProtocolFactory", function() {
       expect(await factory.hasRole(ethers.utils.id("OPERATOR"), otherAccount.address)).to.be.false;
     });
 
-    it("should not have REVERSE_OPERATOR role for other account", async function() {
+    it("should not have REVERSE_CREATOR role for other account", async function() {
       const { factory, otherAccount } = await loadFixture(deployFactory);
-      expect(await factory.hasRole(ethers.utils.id("REVERSE_OPERATOR"), otherAccount.address)).to.be.false;
+      expect(await factory.hasRole(ethers.utils.id("REVERSE_CREATOR"), otherAccount.address)).to.be.false;
     });
 
     it("should be able to grant ADMIN role to other account from ADMIN", async function () {
@@ -181,10 +182,16 @@ describe("RedeemProtocolFactory", function() {
       expect(await factory.hasRole(ethers.utils.id("OPERATOR"), otherAccount.address)).to.be.true;
     });
 
-    it("should be able to grant REVERSE_OPERATOR role to other account from ADMIN", async function () {
+    it("should be able to grant REVERSE_CREATOR role to other account from ADMIN", async function () {
       const { factory, otherAccount } = await loadFixture(deployFactory);
-      await factory.grantRole(ethers.utils.id("REVERSE_OPERATOR"), otherAccount.address);
-      expect(await factory.hasRole(ethers.utils.id("REVERSE_OPERATOR"), otherAccount.address)).to.be.true;
+      await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), otherAccount.address);
+      expect(await factory.hasRole(ethers.utils.id("REVERSE_CREATOR"), otherAccount.address)).to.be.true;
+    });
+
+    it("should be able to grant ROOT_CREATOR role to other account from ADMIN", async function () {
+      const { factory, otherAccount } = await loadFixture(deployFactory);
+      await factory.grantRole(ethers.utils.id("ROOT_CREATOR"), otherAccount.address);
+      expect(await factory.hasRole(ethers.utils.id("ROOT_CREATOR"), otherAccount.address)).to.be.true;
     });
 
     it("should not be able to grant OPERATOR role to other account from non ADMIN", async function () {
@@ -194,9 +201,9 @@ describe("RedeemProtocolFactory", function() {
       );
     });
 
-    it("should not be able to grant REVERSE_OPERATOR role to other account from non ADMIN", async function() {
+    it("should not be able to grant REVERSE_CREATOR role to other account from non ADMIN", async function() {
       const { factory, otherAccount, otherAccount2 } = await loadFixture(deployFactory);
-      await expect(factory.connect(otherAccount).grantRole(ethers.utils.id("REVERSE_OPERATOR"), otherAccount2.address)).to.be.revertedWith(
+      await expect(factory.connect(otherAccount).grantRole(ethers.utils.id("REVERSE_CREATOR"), otherAccount2.address)).to.be.revertedWith(
         `AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("OPERATOR")}`
       );
     });
@@ -308,7 +315,21 @@ describe("RedeemProtocolFactory", function() {
       await createReverse(factory, reverseOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, erc721, 2);
     });
 
-    it("should create successfully with non REVERSE_OPERATOR when not approved only", async function () {
+    it("should create successfully with ROOT_CREATOR and approved only", async function () {
+      const { factory, rootCreator, erc20A, erc721A } = await loadFixture(deployFactoryWithRole);
+      await erc20A.mint(rootCreator.address, ethers.utils.parseEther("0.1"));
+      await erc20A.connect(rootCreator).approve(factory.address, ethers.utils.parseEther("0.1"));
+      await createReverse(factory, rootCreator, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, erc721A, 0);
+    });
+
+    it("should create successfully with ROOT_CREATOR and not ERC721 owner", async function () {
+      const { factory, rootCreator, otherAccount, erc20A, erc721A } = await loadFixture(deployFactoryWithRole);
+      await erc20A.mint(rootCreator.address, ethers.utils.parseEther("0.1"));
+      await erc20A.connect(rootCreator).approve(factory.address, ethers.utils.parseEther("0.1"));
+      await createReverse(factory, rootCreator, otherAccount.address, ethers.constants.AddressZero, erc20A, erc721A, 1);
+    });
+
+    it("should create successfully with non REVERSE_CREATOR when not approved only", async function () {
       const { factory, otherAccount, erc20A, erc721A } = await loadFixture(deployFactoryWithRole);
       await factory.flipApprovedOnly();
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("0.1"));
@@ -321,7 +342,7 @@ describe("RedeemProtocolFactory", function() {
       await expect(factory.connect(op).createReverse(
         0, ethers.utils.parseEther("0.1"),
         [erc721A.address], ethers.constants.AddressZero, ethers.constants.AddressZero, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.be.revertedWith("approved only");
+      )).to.be.revertedWith("not reverse operator");
     });
 
     it("should be reverted for transfer method and msg.sender is not ERC721 owner", async function () {
@@ -329,7 +350,7 @@ describe("RedeemProtocolFactory", function() {
       await expect(factory.connect(reverseOp).createReverse(
         1, ethers.utils.parseEther("0.1"),
         [erc721A.address], ethers.constants.AddressZero, ethers.constants.AddressZero, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.be.revertedWith("must be owner of ERC721");
+      )).to.be.revertedWith("not ERC721 owner");
     });
 
     it("should be reverted for burn method and msg.sender is not ERC721 owner", async function () {
@@ -337,7 +358,7 @@ describe("RedeemProtocolFactory", function() {
       await expect(factory.connect(reverseOp).createReverse(
         2, ethers.utils.parseEther("0.1"),
         [erc721A.address], ethers.constants.AddressZero, ethers.constants.AddressZero, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.be.revertedWith("must be owner of ERC721");
+      )).to.be.revertedWith("not ERC721 owner");
     });
 
     it("should be reverted for transfer method and tokenReceiver is zero address", async function () {

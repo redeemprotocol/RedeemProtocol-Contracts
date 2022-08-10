@@ -16,7 +16,8 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
     
     bytes32 public constant ADMIN = keccak256("ADMIN");
     bytes32 public constant OPERATOR = keccak256("OPERATOR");
-    bytes32 public constant REVERSE_OPERATOR = keccak256("REVERSE_OPERATOR");
+    bytes32 public constant ROOT_CREATOR = keccak256("ROOT_CREATOR");
+    bytes32 public constant REVERSE_CREATOR = keccak256("REVERSE_CREATOR");
 
     Counters.Counter private reverseSalt;
     bool public approveOnly = true;
@@ -39,9 +40,11 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
     ) {
         _grantRole(ADMIN, msg.sender);
         _grantRole(OPERATOR, msg.sender);
+
         _setRoleAdmin(ADMIN, ADMIN);
         _setRoleAdmin(OPERATOR, ADMIN);
-        _setRoleAdmin(REVERSE_OPERATOR, OPERATOR);
+        _setRoleAdmin(ROOT_CREATOR, OPERATOR);
+        _setRoleAdmin(REVERSE_CREATOR, OPERATOR);
 
         defaultSetupFee = _defaultSetupFee;
         defaultUpdateFee = _defaultUpdateFee;
@@ -60,12 +63,12 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
         bytes32 _r,
         bytes32 _s
     ) external returns (address reverse) {
-        if (approveOnly) {
-            require(hasRole(REVERSE_OPERATOR, msg.sender), "approved only");
+        if (approveOnly && !hasRole(ROOT_CREATOR, msg.sender)) {
+            require(hasRole(REVERSE_CREATOR, msg.sender), "not reverse operator");
         }
-        if (_method == RedeemProtocolType.RedeemMethod.Transfer || _method == RedeemProtocolType.RedeemMethod.Burn) {
+        if (!hasRole(ROOT_CREATOR, msg.sender) && (_method == RedeemProtocolType.RedeemMethod.Transfer || _method == RedeemProtocolType.RedeemMethod.Burn)) {
             for (uint i = 0; i < _erc721.length; i++) {
-                require(IERC721Ownable(_erc721[i]).owner() == msg.sender, "must be owner of ERC721");
+                require(IERC721Ownable(_erc721[i]).owner() == msg.sender, "not ERC721 owner");
             }
         }
         if (_method == RedeemProtocolType.RedeemMethod.Transfer) {
