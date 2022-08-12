@@ -8,6 +8,7 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { BigNumberish, Contract } from "ethers";
 import { _TypedDataEncoder } from "ethers/lib/utils";
 import { RPC20, RPC721 } from "../typechain-types/contracts/test";
+import { erc20 } from "../typechain-types/@openzeppelin/contracts/token";
 
 describe("RedeemProtocolReverse", function () {
   const zeroBytes32 = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(""));
@@ -95,7 +96,7 @@ describe("RedeemProtocolReverse", function () {
       }
     );
     await reverse.initialize(
-      0, ethers.utils.parseEther("0.01"), [erc721A.address], ethers.constants.AddressZero,
+      0, ethers.utils.parseEther("0.01"), ethers.constants.AddressZero,
     );
 
     return { deployer, reverse, reverseOp, otherAccount, erc20A, erc20B, erc721A, erc721B };
@@ -122,7 +123,7 @@ describe("RedeemProtocolReverse", function () {
       }
     );
     await reverse.initialize(
-      0, ethers.utils.parseEther("0.1"), [erc721.address], ethers.constants.AddressZero,
+      0, ethers.utils.parseEther("0.1"), ethers.constants.AddressZero,
     );
 
     return { reverse, reverseOp, otherAccount, erc20, erc721 };
@@ -149,7 +150,7 @@ describe("RedeemProtocolReverse", function () {
       }
     );
     await reverse.initialize(
-      1, ethers.utils.parseEther("0.1"), [erc721.address], receiver.address,
+      1, ethers.utils.parseEther("0.1"), receiver.address,
     );
 
     return { reverse, reverseOp, otherAccount, erc20, erc721 };
@@ -176,7 +177,7 @@ describe("RedeemProtocolReverse", function () {
       }
     );
     await reverse.initialize(
-      2, ethers.utils.parseEther("0.1"), [erc721.address], ethers.constants.AddressZero,
+      2, ethers.utils.parseEther("0.1"), ethers.constants.AddressZero,
     );
 
     return { reverse, reverseOp, otherAccount, erc20, erc721 };
@@ -205,7 +206,7 @@ describe("RedeemProtocolReverse", function () {
       }
     );
     await reverse.initialize(
-      0, ethers.utils.parseEther("0.01"), [erc721A.address], ethers.constants.AddressZero,
+      0, ethers.utils.parseEther("0.01"), ethers.constants.AddressZero,
     );
 
     return { reverse, reverseOp, otherAccount, erc20A, erc20B, erc721A, erc721B };
@@ -234,7 +235,7 @@ describe("RedeemProtocolReverse", function () {
       }
     );
     await reverse.initialize(
-      1, ethers.utils.parseEther("0.01"), [erc721A.address], receiver.address,
+      1, ethers.utils.parseEther("0.01"), receiver.address,
     );
 
     return { reverse, reverseOp, otherAccount, erc20A, erc20B, erc721A, erc721B };
@@ -263,7 +264,7 @@ describe("RedeemProtocolReverse", function () {
       }
     );
     await reverse.initialize(
-      2, ethers.utils.parseEther("0.01"), [erc721A.address], ethers.constants.AddressZero,
+      2, ethers.utils.parseEther("0.01"), ethers.constants.AddressZero,
     );
 
     return { reverse, reverseOp, otherAccount, erc20A, erc20B, erc721A, erc721B };
@@ -604,7 +605,6 @@ describe("RedeemProtocolReverse", function () {
       method: BigNumberish,
       redeemAmount: string,
       erc20: RPC20,
-      erc721: RPC721[],
       tokenReceiver: string,
       deadline: BigNumberish,
       v: BigNumberish,
@@ -612,17 +612,12 @@ describe("RedeemProtocolReverse", function () {
       s: string,
       expBalance: string,
     ) {
-      const e = erc721.map(i => i.address);
       await reverse.connect(updater).updateReverse(
-        method, ethers.utils.parseEther(redeemAmount), e, tokenReceiver,
+        method, ethers.utils.parseEther(redeemAmount), tokenReceiver,
         deadline, v, r, s,
       );
 
       expect(await reverse.redeemMethod()).to.equal(method);
-      expect(await reverse.redeemAmount()).to.equal(ethers.utils.parseEther("1"));
-      for (let i = 0; i < e.length; i++) {
-        expect(await reverse.erc721(i)).to.equal(e[i]);
-      }
       expect(await reverse.tokenReceiver()).to.equal(tokenReceiver);
       expect(await erc20.balanceOf(updater.address)).to.equal(ethers.utils.parseEther(expBalance));
     };
@@ -632,7 +627,7 @@ describe("RedeemProtocolReverse", function () {
       await erc20A.mint(reverseOp.address, ethers.utils.parseEther("1"));
       await erc20A.connect(reverseOp).approve(reverse.address, ethers.utils.parseEther("0.01"));
       await updateReverse(
-        reverse, reverseOp, 0, "1", erc20A, [erc721B], ethers.constants.AddressZero,
+        reverse, reverseOp, 0, "1", erc20A, ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32, "0.99",
       );
     });
@@ -645,7 +640,7 @@ describe("RedeemProtocolReverse", function () {
       await erc20A.connect(reverseOp).approve(reverse.address, ethers.utils.parseEther("0.01"));
       
       await updateReverse(
-        reverse, reverseOp, 1, "1", erc20A, [erc721], otherAccount.address,
+        reverse, reverseOp, 1, "1", erc20A, otherAccount.address,
         0, 0, zeroBytes32, zeroBytes32, "0.99",
       );
     });
@@ -658,7 +653,7 @@ describe("RedeemProtocolReverse", function () {
       await erc20A.connect(reverseOp).approve(reverse.address, ethers.utils.parseEther("0.01"));
       
       await updateReverse(
-        reverse, reverseOp, 2, "1", erc20A, [erc721], otherAccount.address,
+        reverse, reverseOp, 2, "1", erc20A, otherAccount.address,
         0, 0, zeroBytes32, zeroBytes32, "0.99",
       );
     });
@@ -673,7 +668,7 @@ describe("RedeemProtocolReverse", function () {
       const permit = await reverseOp._signTypedData(permitData.domain, permitData.types, permitData.message);
       const sig = ethers.utils.splitSignature(permit);
       await updateReverse(
-        reverse, reverseOp, 0, "1", erc20A, [erc721B], ethers.constants.AddressZero,
+        reverse, reverseOp, 0, "1", erc20A, ethers.constants.AddressZero,
         deadline, sig.v, sig.r, sig.s, "0.99",
       );
     });
@@ -681,25 +676,9 @@ describe("RedeemProtocolReverse", function () {
     it("should be reverted when not OPERATOR role", async function () {
       const { reverse, otherAccount } = await loadFixture(deployReverse);
       await expect(reverse.connect(otherAccount).updateReverse(
-        0, ethers.utils.parseEther("1"), [], ethers.constants.AddressZero,
+        0, ethers.utils.parseEther("1"), ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32,
       )).to.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("OPERATOR")}`);
-    });
-
-    it("should be reverted when not owner of erc721, transfer", async function () {
-      const { reverse, reverseOp, erc721B } = await loadFixture(deployReverse);
-      await expect(reverse.connect(reverseOp).updateReverse(
-        1, ethers.utils.parseEther("1"), [erc721B.address], ethers.constants.AddressZero,
-        0, 0, zeroBytes32, zeroBytes32,
-      )).to.revertedWith("not ERC721 owner");
-    });
-
-    it("should be reverted when not owner of erc721, transfer", async function () {
-      const { reverse, reverseOp, erc721B } = await loadFixture(deployReverse);
-      await expect(reverse.connect(reverseOp).updateReverse(
-        2, ethers.utils.parseEther("1"), [erc721B.address], ethers.constants.AddressZero,
-        0, 0, zeroBytes32, zeroBytes32,
-      )).to.revertedWith("not ERC721 owner");
     });
 
     it("should be reverted when tokenReceiver is zero address, transfer", async function () {
@@ -707,7 +686,7 @@ describe("RedeemProtocolReverse", function () {
       const erc721Factory = await ethers.getContractFactory("RPC721");
       const erc721 = await erc721Factory.connect(reverseOp).deploy();
       await expect(reverse.connect(reverseOp).updateReverse(
-        1, ethers.utils.parseEther("1"), [erc721.address], ethers.constants.AddressZero,
+        1, ethers.utils.parseEther("1"), ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32,
       )).to.revertedWith("tokenReceiver must be set");
     });
@@ -776,7 +755,7 @@ describe("RedeemProtocolReverse", function () {
       const { deployer, reverse, reverseOp } = await loadFixture(deployReverse);
       await reverse.connect(deployer).pause();
       await expect(reverse.connect(reverseOp).updateReverse(
-        0, ethers.utils.parseEther("1"), [], ethers.constants.AddressZero,
+        0, ethers.utils.parseEther("1"), ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32,
       )).to.revertedWith("Pausable: paused");
     });

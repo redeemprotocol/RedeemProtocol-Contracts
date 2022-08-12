@@ -9,7 +9,6 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./libraries/RedeemProtocolType.sol";
 import "./interfaces/IERC721.sol";
 import "./interfaces/IERC721Burnable.sol";
-import "./interfaces/IERC721Ownable.sol";
 import "./interfaces/IERC20.sol";
 import "./interfaces/IERC20Permit.sol";
 
@@ -19,6 +18,8 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
     bytes32 public constant OPERATOR = keccak256("OPERATOR");
     bytes32 private constant DEFAULT_CUSTOM_ID = "DEFAULT_CUSTOM_ID";
 
+    bytes4 private constant erc721Interface = 0x80ac58cd;
+
     address public factory;
     mapping(address => uint256) public lockedBalance;
     mapping(address => uint256) public freeBalance;
@@ -26,7 +27,6 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
     RedeemProtocolType.Fee public updateFee;
     RedeemProtocolType.Fee public baseRedeemFee;
 
-    address[] public erc721;
     uint256 public redeemAmount;
     RedeemProtocolType.RedeemMethod public redeemMethod;
     address public tokenReceiver;
@@ -102,10 +102,10 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         if (_customId[0] == 0) {
             _customId = DEFAULT_CUSTOM_ID;
         }
+        require(IERC165(_contractAddr).supportsInterface(erc721Interface), "not ERC721 token");
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Mark, "method is not mark");
         require(isRedeemed[_contractAddr][_tokenId][_customId] == false, "token has been redeemed");
         require(IERC721(_contractAddr).ownerOf(_tokenId) == _msgSender(), "not token owner");
-        require(_validateERC721(_contractAddr), "not valid ERC721");
 
         (, uint256 redeemFee) = getRedeemFee();
         _payFee(redeemFee);
@@ -132,9 +132,9 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         if (_customId[0] == 0) {
             _customId = DEFAULT_CUSTOM_ID;
         }
+        require(IERC165(_contractAddr).supportsInterface(erc721Interface), "not ERC721 token");
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Transfer, "method is not transfer");
         require(isRedeemed[_contractAddr][_tokenId][_customId] == false, "token has been redeemed");
-        require(_validateERC721(_contractAddr), "not acceptable ERC721");
 
         (, uint256 redeemFee) = getRedeemFee();
         _payFee(redeemFee);
@@ -162,9 +162,9 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         if (_customId[0] == 0) {
             _customId = DEFAULT_CUSTOM_ID;
         }
+        require(IERC165(_contractAddr).supportsInterface(erc721Interface), "not ERC721 token");
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Burn, "method is not burn");
         require(isRedeemed[_contractAddr][_tokenId][_customId] == false, "token has been redeemed");
-        require(_validateERC721(_contractAddr), "not acceptable ERC721");
 
         (, uint256 redeemFee) = getRedeemFee();
         _payFee(redeemFee);
@@ -183,22 +183,16 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
     function updateReverse(
         RedeemProtocolType.RedeemMethod _method,
         uint256 _redeemAmount,
-        address[] calldata _erc721,
         address _tokenReceiver,
         uint _deadline,
         uint8 _v,
         bytes32 _r,
         bytes32 _s
     ) external onlyRole(OPERATOR) whenNotPaused {
-        if (_method == RedeemProtocolType.RedeemMethod.Transfer || _method == RedeemProtocolType.RedeemMethod.Burn) {
-            for (uint i = 0; i < _erc721.length; i++) {
-                require(IERC721Ownable(_erc721[i]).owner() == msg.sender, "not ERC721 owner");
-            }
-        }
         if (_method == RedeemProtocolType.RedeemMethod.Transfer) {
             require(_tokenReceiver != address(0), "tokenReceiver must be set");
         }
-        _updateReverse(_method, _redeemAmount, _erc721, _tokenReceiver);
+        _updateReverse(_method, _redeemAmount, _tokenReceiver);
 
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
             IERC20Permit(updateFee.token).permit(msg.sender, address(this), updateFee.amount, _deadline, _v, _r, _s);
@@ -209,12 +203,10 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
     function _updateReverse(
         RedeemProtocolType.RedeemMethod _method,
         uint256 _redeemAmount,
-        address[] calldata _erc721,
         address _tokenReceiver
     ) private {
         redeemMethod = _method;
         redeemAmount = _redeemAmount;
-        erc721 = _erc721;
         tokenReceiver = _tokenReceiver;
     }
 
@@ -233,10 +225,9 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
     function initialize(
         RedeemProtocolType.RedeemMethod _method,
         uint256 _redeemAmount,
-        address[] calldata _erc721,
         address _tokenReceiver
     ) external onlyFactory whenNotPaused {
-        _updateReverse(_method, _redeemAmount, _erc721, _tokenReceiver);
+        _updateReverse(_method, _redeemAmount, _tokenReceiver);
     }
 
     function pause() external onlyFactory {
@@ -275,16 +266,5 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
 
     function _msgData() internal view override(Context, ERC2771Context) returns(bytes calldata) {
         return ERC2771Context._msgData();
-    }
-
-    // NOTE: better way to determine if contractAddr in erc721?
-    function _validateERC721(address _contractAddr) private view returns (bool) {
-        for (uint i = 0; i < erc721.length; i++) {
-            if (erc721[i] == _contractAddr) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

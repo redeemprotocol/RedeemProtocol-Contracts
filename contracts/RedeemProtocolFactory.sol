@@ -7,7 +7,6 @@ import "@openzeppelin/contracts/utils/Create2.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import { RedeemProtocolType } from "./libraries/RedeemProtocolType.sol";
 import "./interfaces/IERC20Permit.sol";
-import "./interfaces/IERC721Ownable.sol";
 import "./RedeemProtocolReverse.sol";
 
 contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
@@ -55,7 +54,6 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
     function createReverse(
         RedeemProtocolType.RedeemMethod _method,
         uint256 _redeemAmount,
-        address[] calldata _erc721,
         address _tokenReceiver,
         address _forwarder,
         uint _deadline,
@@ -65,11 +63,6 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
     ) external returns (address reverse) {
         if (approveOnly && !hasRole(ROOT_CREATOR, msg.sender)) {
             require(hasRole(REVERSE_CREATOR, msg.sender), "not reverse operator");
-        }
-        if (!hasRole(ROOT_CREATOR, msg.sender) && (_method == RedeemProtocolType.RedeemMethod.Transfer || _method == RedeemProtocolType.RedeemMethod.Burn)) {
-            for (uint i = 0; i < _erc721.length; i++) {
-                require(IERC721Ownable(_erc721[i]).owner() == msg.sender, "not ERC721 owner");
-            }
         }
         if (_method == RedeemProtocolType.RedeemMethod.Transfer) {
             require(_tokenReceiver != address(0), "tokenReceiver must be set");
@@ -89,7 +82,7 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
         reverseSalt.increment();
         reverse = Create2.deploy(0, salt, bytecode);
         }
-        RedeemProtocolReverse(reverse).initialize(_method, _redeemAmount, _erc721, _tokenReceiver);
+        RedeemProtocolReverse(reverse).initialize(_method, _redeemAmount, _tokenReceiver);
         allReverses.push(reverse);
 
         // avoid stack too deep error
