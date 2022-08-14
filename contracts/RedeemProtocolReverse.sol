@@ -112,9 +112,9 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         isRedeemed[_contractAddr][_tokenId][_customId] = true;
 
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
-            IERC20Permit(baseRedeemFee.token).permit(_msgSender(), address(this), redeemFee, _deadline, _v, _r, _s);
+            IERC20Permit(baseRedeemFee.token).permit(msg.sender, address(this), redeemFee, _deadline, _v, _r, _s);
         }
-        IERC20Permit(baseRedeemFee.token).transferFrom(_msgSender(), address(this), redeemFee);
+        IERC20Permit(baseRedeemFee.token).transferFrom(msg.sender, address(this), redeemFee);
         // // NOTE: do we really need this check?
         require(IERC20(baseRedeemFee.token).balanceOf(address(this)) >= lockedBalance[baseRedeemFee.token] + freeBalance[baseRedeemFee.token], "wrong balance");
         emit Redeemed(_contractAddr, _tokenId, RedeemProtocolType.RedeemMethod.Mark, _msgSender(), _customId);
@@ -141,9 +141,9 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         isRedeemed[_contractAddr][_tokenId][_customId] = true;
 
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
-            IERC20Permit(baseRedeemFee.token).permit(_msgSender(), address(this), redeemFee, _deadline, _v, _r, _s);
+            IERC20Permit(baseRedeemFee.token).permit(msg.sender, address(this), redeemFee, _deadline, _v, _r, _s);
         }
-        IERC20Permit(baseRedeemFee.token).transferFrom(_msgSender(), address(this), redeemFee);
+        IERC20Permit(baseRedeemFee.token).transferFrom(msg.sender, address(this), redeemFee);
         IERC721(_contractAddr).safeTransferFrom(_msgSender(), tokenReceiver, _tokenId);
         // NOTE: do we really need this check?
         require(IERC20(baseRedeemFee.token).balanceOf(address(this)) >= lockedBalance[baseRedeemFee.token] + freeBalance[baseRedeemFee.token], "wrong balance");
@@ -171,9 +171,9 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         isRedeemed[_contractAddr][_tokenId][_customId] = true;
 
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
-            IERC20Permit(baseRedeemFee.token).permit(_msgSender(), address(this), redeemFee, _deadline, _v, _r, _s);
+            IERC20Permit(baseRedeemFee.token).permit(msg.sender, address(this), redeemFee, _deadline, _v, _r, _s);
         }
-        IERC20Permit(baseRedeemFee.token).transferFrom(_msgSender(), address(this), redeemFee);
+        IERC20Permit(baseRedeemFee.token).transferFrom(msg.sender, address(this), redeemFee);
         IERC721Burnable(_contractAddr).burn(_tokenId);
         // NOTE: do we really need this check?
         require(IERC20(baseRedeemFee.token).balanceOf(address(this)) >= lockedBalance[baseRedeemFee.token] + freeBalance[baseRedeemFee.token], "wrong balance");
