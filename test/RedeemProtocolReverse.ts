@@ -7,10 +7,10 @@ import { RedeemProtocolReverse } from "../typechain-types";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { BigNumberish, Contract } from "ethers";
 import { _TypedDataEncoder } from "ethers/lib/utils";
-import { RPC20, RPC721 } from "../typechain-types/contracts/test";
-import { erc20 } from "../typechain-types/@openzeppelin/contracts/token";
+import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
+import { RPC20 } from "../typechain-types/contracts/test";
 
-describe("RedeemProtocolReverse", function () {
+describe.only("RedeemProtocolReverse", function () {
   const zeroBytes32 = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(""));
   function getPermitData(
     owner: string,
@@ -45,6 +45,40 @@ describe("RedeemProtocolReverse", function () {
         ]
       }
     }
+  };
+
+  function getMetadata(
+    contractAddr: string,
+    from: string,
+    to: string,
+    data: string,
+  ) {
+    return {
+      domain: {
+        name: 'MinimalForwarder',
+        version: '0.0.1',
+        chainId: provider.network.chainId,
+        verifyingContract: contractAddr,
+      },
+      message: {
+        from: from,
+        to: to,
+        value: 0,
+        gas: 200000,
+        nonce: 0,
+        data: data,
+      },
+      types: {
+        ForwardRequest: [
+          { name: "from", type: "address" },
+          { name: "to", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "gas", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "data", type: "bytes" },
+        ]
+      }
+    };
   };
 
   async function setBalance(
@@ -221,10 +255,12 @@ describe("RedeemProtocolReverse", function () {
     const erc721Factory = await ethers.getContractFactory("RPC721");
     const erc721A = await erc721Factory.deploy();
     const erc721B = await erc721Factory.deploy();
+    const FF = await ethers.getContractFactory("MinimalForwarder");
+    const forwarder = await FF.deploy();
     const Reverse = await ethers.getContractFactory("RedeemProtocolReverse");
     const reverse = await Reverse.deploy(
       reverseOp.address,
-      ethers.constants.AddressZero,
+      forwarder.address,
       {
         amount: ethers.utils.parseEther("0.01"),
         token: erc20A.address,
@@ -238,7 +274,7 @@ describe("RedeemProtocolReverse", function () {
       1, ethers.utils.parseEther("0.01"), receiver.address,
     );
 
-    return { reverse, reverseOp, otherAccount, erc20A, erc20B, erc721A, erc721B };
+    return { reverse, reverseOp, otherAccount, receiver, erc20A, erc20B, erc721A, erc721B, forwarder };
   };
 
   async function deployReverseWithMultiTokensBurn() {
@@ -452,6 +488,48 @@ describe("RedeemProtocolReverse", function () {
         redeemMethod.redeemWithTransfer, reverse, otherAccount, erc20A, erc721A, deadline, sig.v, sig.r, sig.s,
         "0.01", "0.99", "0.009", "0",
       );
+    });
+
+    it("should success via forwarder", async function () {
+      const { reverse, reverseOp, otherAccount, receiver, erc20A, erc721A, forwarder } = await loadFixture(deployReverseWithMultiTokensTransfer);
+      await erc721A.safeMint(otherAccount.address);
+      await erc20A.mint(forwarder.address, ethers.utils.parseEther("1"));
+      
+      const iface = new ethers.utils.Interface([
+        "function redeemWithTransfer(address _contractAddr, uint256 _tokenId, bytes32 _customId, uint _deadline, uint8 _v, bytes32 _r, bytes32 _s)",
+      ]);
+      const customId1 = ethers.utils.keccak256(ethers.utils.toUtf8Bytes("custom-id-2"));
+      const txData = iface.encodeFunctionData('redeemWithTransfer', [
+        erc721A.address,
+        0,
+        customId1,
+        0, 0, zeroBytes32, zeroBytes32,
+      ]);
+      
+      const meta = getMetadata(
+        forwarder.address,
+        otherAccount.address,
+        reverse.address,
+        txData,
+      );
+      const sig = await otherAccount._signTypedData(meta.domain, meta.types, meta.message);
+      await erc721A.connect(otherAccount).approve(reverse.address, 0);
+      await forwarder.connect(otherAccount).approve(erc20A.address, reverse.address, ethers.utils.parseEther("0.01"));
+      
+      await expect(forwarder.connect(reverseOp).execute(
+        {
+          from: otherAccount.address,
+          to: reverse.address,
+          value: 0,
+          gas: 200000,
+          nonce: 0,
+          data: txData,
+        },
+        sig,
+      )).to.emit(forwarder, "Called").withArgs(true, anyValue);
+
+      expect(await erc721A.ownerOf(0)).to.equal(receiver.address);
+      expect(await erc20A.balanceOf(forwarder.address)).to.equal(ethers.utils.parseEther("0.99"));
     });
 
     it("should be success with empty custom id", async function () {
