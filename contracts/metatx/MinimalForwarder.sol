@@ -11,6 +11,7 @@ import "../interfaces/IERC20.sol";
  */
 contract MinimalForwarder is EIP712 {
     using ECDSA for bytes32;
+    address owner;
 
     struct ForwardRequest {
         address from;
@@ -25,7 +26,14 @@ contract MinimalForwarder is EIP712 {
 
     mapping(address => uint256) private _nonces;
 
-    constructor() EIP712("MinimalForwarder", "0.0.1") {}
+    constructor() EIP712("MinimalForwarder", "0.0.1") {
+        owner = msg.sender;
+    }
+
+    modifier onlyOwner(){
+        require(msg.sender == owner, "only owner");
+        _;
+    }
 
     function getNonce(address from) public view returns (uint256) {
         return _nonces[from];
@@ -44,7 +52,7 @@ contract MinimalForwarder is EIP712 {
         return _nonces[req.from] == req.nonce && signer == req.from;
     }
     
-    function approve(address _erc20, address _spender, uint256 _amount) external {
+    function approve(address _erc20, address _spender, uint256 _amount) external onlyOwner {
         IERC20(_erc20).approve(_spender, _amount);
     }
 
