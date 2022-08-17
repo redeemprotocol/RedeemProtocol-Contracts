@@ -34,9 +34,9 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
     mapping(address => mapping(uint256 => mapping(bytes32 => bool))) public isRedeemed;
 
     event Redeemed(
-        address indexed contract_addr,
-        uint256 indexed token_id,
-        RedeemProtocolType.RedeemMethod indexed redeem_method,
+        address indexed contractAddress,
+        uint256 indexed tokenId,
+        RedeemProtocolType.RedeemMethod indexed redeemMethod,
         address redeemer,
         bytes32 customId
     );
