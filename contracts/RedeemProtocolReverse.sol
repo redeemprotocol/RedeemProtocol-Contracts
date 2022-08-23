@@ -1,6 +1,6 @@
 
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+pragma solidity 0.8.16;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/metatx/ERC2771Context.sol";
@@ -104,7 +104,7 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         }
         require(IERC165(_contractAddr).supportsInterface(erc721Interface), "not ERC721 token");
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Mark, "method is not mark");
-        require(isRedeemed[_contractAddr][_tokenId][_customId] == false, "token has been redeemed");
+        require(!isRedeemed[_contractAddr][_tokenId][_customId], "token has been redeemed");
         require(IERC721(_contractAddr).ownerOf(_tokenId) == _msgSender(), "not token owner");
 
         (, uint256 redeemFee) = getRedeemFee();
@@ -114,7 +114,8 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
             IERC20Permit(baseRedeemFee.token).permit(msg.sender, address(this), redeemFee, _deadline, _v, _r, _s);
         }
-        IERC20Permit(baseRedeemFee.token).transferFrom(msg.sender, address(this), redeemFee);
+        bool ok = IERC20Permit(baseRedeemFee.token).transferFrom(msg.sender, address(this), redeemFee);
+        require(ok, "fee payment failed");
         // // NOTE: do we really need this check?
         require(IERC20(baseRedeemFee.token).balanceOf(address(this)) >= lockedBalance[baseRedeemFee.token] + freeBalance[baseRedeemFee.token], "wrong balance");
         emit Redeemed(_contractAddr, _tokenId, RedeemProtocolType.RedeemMethod.Mark, _msgSender(), _customId);
@@ -134,7 +135,7 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         }
         require(IERC165(_contractAddr).supportsInterface(erc721Interface), "not ERC721 token");
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Transfer, "method is not transfer");
-        require(isRedeemed[_contractAddr][_tokenId][_customId] == false, "token has been redeemed");
+        require(!isRedeemed[_contractAddr][_tokenId][_customId], "token has been redeemed");
 
         (, uint256 redeemFee) = getRedeemFee();
         _payFee(redeemFee);
@@ -143,7 +144,8 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
             IERC20Permit(baseRedeemFee.token).permit(msg.sender, address(this), redeemFee, _deadline, _v, _r, _s);
         }
-        IERC20Permit(baseRedeemFee.token).transferFrom(msg.sender, address(this), redeemFee);
+        bool ok = IERC20Permit(baseRedeemFee.token).transferFrom(msg.sender, address(this), redeemFee);
+        require(ok, "fee payment failed");
         IERC721(_contractAddr).safeTransferFrom(_msgSender(), tokenReceiver, _tokenId);
         // NOTE: do we really need this check?
         require(IERC20(baseRedeemFee.token).balanceOf(address(this)) >= lockedBalance[baseRedeemFee.token] + freeBalance[baseRedeemFee.token], "wrong balance");
@@ -164,7 +166,7 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         }
         require(IERC165(_contractAddr).supportsInterface(erc721Interface), "not ERC721 token");
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Burn, "method is not burn");
-        require(isRedeemed[_contractAddr][_tokenId][_customId] == false, "token has been redeemed");
+        require(!isRedeemed[_contractAddr][_tokenId][_customId], "token has been redeemed");
 
         (, uint256 redeemFee) = getRedeemFee();
         _payFee(redeemFee);
@@ -173,7 +175,8 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
             IERC20Permit(baseRedeemFee.token).permit(msg.sender, address(this), redeemFee, _deadline, _v, _r, _s);
         }
-        IERC20Permit(baseRedeemFee.token).transferFrom(msg.sender, address(this), redeemFee);
+        bool ok = IERC20Permit(baseRedeemFee.token).transferFrom(msg.sender, address(this), redeemFee);
+        require(ok, "fee payment failed");
         IERC721Burnable(_contractAddr).burn(_tokenId);
         // NOTE: do we really need this check?
         require(IERC20(baseRedeemFee.token).balanceOf(address(this)) >= lockedBalance[baseRedeemFee.token] + freeBalance[baseRedeemFee.token], "wrong balance");
@@ -197,7 +200,8 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
             IERC20Permit(updateFee.token).permit(msg.sender, address(this), updateFee.amount, _deadline, _v, _r, _s);
         }
-        IERC20Permit(updateFee.token).transferFrom(msg.sender, address(this), updateFee.amount);
+        bool ok = IERC20Permit(updateFee.token).transferFrom(msg.sender, address(this), updateFee.amount);
+        require(ok, "fee payment failed");
     }
 
     function _updateReverse(
@@ -218,7 +222,8 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
     function withdraw(address _token, uint256 _amount, address _receiver) external nonReentrant onlyRole(ADMIN) whenNotPaused {
         require(freeBalance[_token] >= _amount, "not enough balance");
         freeBalance[_token] -= _amount;
-        IERC20(_token).transfer(_receiver, _amount);
+        bool ok = IERC20(_token).transfer(_receiver, _amount);
+        require(ok, "withdraw failed");
     }
 
     // factory methods
@@ -252,7 +257,8 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
 
     function withdrawByFactory(address _token, uint256 _amount, address _receiver) external nonReentrant onlyFactory {
         require(IERC20(_token).balanceOf(address(this)) - _amount >= lockedBalance[_token] + freeBalance[_token], "wrong balance");
-        IERC20(_token).transfer(_receiver, _amount);
+        bool ok = IERC20(_token).transfer(_receiver, _amount);
+        require(ok, "withdraw by factory failed");
     }
 
     function depositByFactory(address _token, uint256 _amount) external nonReentrant onlyFactory {

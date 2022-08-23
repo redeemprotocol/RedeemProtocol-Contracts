@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+pragma solidity 0.8.16;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
@@ -35,7 +35,7 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
     constructor(
         RedeemProtocolType.Fee memory _defaultSetupFee,
         RedeemProtocolType.Fee memory _defaultUpdateFee,
-        RedeemProtocolType.Fee memory _defaultBaseRedeemFee
+        RedeemProtocolType.Fee memory _defaultBaseRedeemFee 
     ) {
         _grantRole(ADMIN, msg.sender);
         _grantRole(OPERATOR, msg.sender);
@@ -96,7 +96,8 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
             IERC20Permit(setupFee.token).permit(msg.sender, address(this), setupFee.amount, _deadline, _v, _r, _s);
         }
-        IERC20Permit(setupFee.token).transferFrom(msg.sender, address(this), setupFee.amount);
+        bool ok = IERC20Permit(setupFee.token).transferFrom(msg.sender, address(this), setupFee.amount);
+        require(ok, "fee payment failed");
         }
         emit ReverseCreated(msg.sender, reverse);
     }
@@ -171,7 +172,8 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
 
     function withdraw(address _token, uint256 _amount, address _receiver) external nonReentrant onlyRole(ADMIN) {
         require(IERC20Permit(_token).balanceOf(address(this)) >= _amount, "not enough balance");
-        IERC20Permit(_token).transfer(_receiver, _amount);
+        bool ok = IERC20Permit(_token).transfer(_receiver, _amount);
+        require(ok, "withdraw failed");
     }
 
     function withdrawReverse(address _reverse, address _token, uint256 _amount, address _receiver) external nonReentrant onlyRole(ADMIN) {
@@ -180,6 +182,7 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
 
     function depositReverse(address _reverse, address _token, uint256 _amount) external nonReentrant onlyRole(ADMIN) {
         RedeemProtocolReverse(_reverse).depositByFactory(_token, _amount);
-        IERC20Permit(_token).transferFrom(msg.sender, _reverse, _amount);
+        bool ok = IERC20Permit(_token).transferFrom(msg.sender, _reverse, _amount);
+        require(ok, "deposit failed");
     }
 }
