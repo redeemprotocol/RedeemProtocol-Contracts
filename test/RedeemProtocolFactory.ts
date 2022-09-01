@@ -2,13 +2,12 @@ import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect } from "chai";
 import { BigNumberish } from "ethers";
-import { MockContract } from "ethereum-waffle";
-import { ethers, waffle, network } from "hardhat";
+import { ethers, waffle } from "hardhat";
 import RedeemProtocolReverse from "../artifacts/contracts/RedeemProtocolReverse.sol/RedeemProtocolReverse.json";
 import { RedeemProtocolFactory } from "../typechain-types";
 import { defaultAbiCoder } from "@ethersproject/abi";
 const { provider } = waffle;
-import { RPC20, RPC721 } from "../typechain-types/contracts/test";
+import { RPC20 } from "../typechain-types/contracts/test";
 
 describe("RedeemProtocolFactory", function() {
   const zeroBytes32 = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(""));
@@ -49,7 +48,7 @@ describe("RedeemProtocolFactory", function() {
 
   async function deployFactory() {
     // Contracts are deployed using the first signer/account by default
-    const [owner, otherAccount, otherAccount2] = await ethers.getSigners();
+    const [owner, otherAccount, otherAccount2, feeReceiver] = await ethers.getSigners();
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20 = await erc20Factory.deploy();
     const Factory = await ethers.getContractFactory("RedeemProtocolFactory");
@@ -65,14 +64,15 @@ describe("RedeemProtocolFactory", function() {
       {
         amount: ethers.utils.parseEther("0.001"),
         token: erc20.address,
-      }
+      },
+      feeReceiver.address,
     );
 
     return { factory, owner, otherAccount, otherAccount2 };
   }
 
   async function deployFactoryWithRole() {
-    const [admin, op, reverseOp, otherAccount, rootCreator] = await ethers.getSigners();
+    const [admin, op, reverseOp, otherAccount, rootCreator, feeReceiver] = await ethers.getSigners();
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20A = await erc20Factory.deploy();
     const erc20B = await erc20Factory.deploy();
@@ -92,7 +92,8 @@ describe("RedeemProtocolFactory", function() {
       {
         amount: ethers.utils.parseEther("0.001"),
         token: erc20A.address,
-      }
+      },
+      feeReceiver.address,
     );
     await factory.grantRole(ethers.utils.id("OPERATOR"), op.address);
     await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), reverseOp.address);
@@ -102,7 +103,7 @@ describe("RedeemProtocolFactory", function() {
   }
 
   async function deployFactoryWithERC20Permit() {
-    const [admin, op, reverseOp, otherAccount] = await ethers.getSigners();
+    const [admin, op, reverseOp, otherAccount, feeReceiver] = await ethers.getSigners();
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20 = await erc20Factory.deploy();
     const erc721Factory = await ethers.getContractFactory("RPC721");
@@ -120,7 +121,8 @@ describe("RedeemProtocolFactory", function() {
       {
         amount: ethers.utils.parseEther("0.001"),
         token: erc20.address,
-      }
+      },
+      feeReceiver.address,
     );
     await factory.grantRole(ethers.utils.id("OPERATOR"), op.address);
     await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), reverseOp.address);
@@ -284,6 +286,8 @@ describe("RedeemProtocolFactory", function() {
       const baseRedeemFee = await reverse.baseRedeemFee();
       expect(baseRedeemFee.amount).to.equal(ethers.utils.parseEther("0.001"));
       expect(baseRedeemFee.token).to.equal(erc20.address);
+      const feeReceiver = await factory.feeReceiver()
+      expect(await erc20.balanceOf(feeReceiver)).to.equal(ethers.utils.parseEther("0.1"));
     };
 
     it("should create successfully with mark", async () => {
@@ -445,11 +449,10 @@ describe("RedeemProtocolFactory", function() {
       )
 
       const erc721Factory = await ethers.getContractFactory("RPC721");
-      const erc721 = await erc721Factory.connect(reverseOp).deploy();
       await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
       await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
       await expect(factory.connect(reverseOp).createReverse(
-        1, ethers.utils.parseEther("0.005"),
+        1, ethers.utils.parseEther("1.1"),
         otherAccount.address, ethers.constants.AddressZero, 0, 0, zeroBytes32, zeroBytes32,
       )).to.emit(factory, "ReverseCreated").withArgs(reverseOp.address, create2Address);
 
@@ -867,55 +870,10 @@ describe("RedeemProtocolFactory", function() {
           .to.be.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("ADMIN")}`);
     });
 
-    it("withdrawReverse should success", async function () {
-      const { factory, reverseOp, otherAccount, erc20A } = await loadFixture(deployFactoryWithRole);
-      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
-      await erc20A.mint(reverseAddr, ethers.utils.parseEther("1"));
-      await factory.withdrawReverse(reverseAddr, erc20A.address, ethers.utils.parseEther("1"), otherAccount.address);
-      expect(await erc20A.balanceOf(otherAccount.address)).to.equal(ethers.utils.parseEther("1"));
-    });
-
-    it("withdrawReverse should be reverted when not enougn balance", async function () {
-      const { factory, reverseOp, otherAccount, erc20A } = await loadFixture(deployFactoryWithRole);
-      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
-
-      // lockedBalance index is 3
-      const slotIndex = 3;
-      const slot = ethers.utils.keccak256(
-        ethers.utils.defaultAbiCoder.encode(['address', 'uint'], [erc20A.address, slotIndex])
-      );
-      const value = ethers.utils.defaultAbiCoder.encode(['uint256'], [ethers.utils.parseEther("1")]);
-      await network.provider.send("hardhat_setStorageAt", [ reverseAddr, slot, value]);
-
-      await erc20A.mint(reverseAddr, ethers.utils.parseEther("1"));
-      await expect(factory.withdrawReverse(reverseAddr, erc20A.address, ethers.utils.parseEther("0.001"), otherAccount.address))
-          .to.be.revertedWith("wrong balance");
-    });
-
-    it("withdrawReverse should be reverted when not ADMIN role", async function () {
-      const { factory, reverseOp, otherAccount, erc20A } = await loadFixture(deployFactoryWithRole);
-      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
-      await expect(factory.connect(otherAccount).withdrawReverse(reverseAddr, erc20A.address, ethers.utils.parseEther("1"), otherAccount.address))
-          .to.be.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("ADMIN")}`);
-    });
-
-    it("depositReverse should success", async function () {
-      const { factory, admin, reverseOp, erc20A } = await loadFixture(deployFactoryWithRole);
-      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
-      await erc20A.mint(admin.address, ethers.utils.parseEther("1"));
-      await erc20A.approve(factory.address, ethers.utils.parseEther("1"));
-      await factory.depositReverse(reverseAddr, erc20A.address, ethers.utils.parseEther("1"));
-
-      const reverse = ethers.getContractAt("RedeemProtocolReverse", reverseAddr);
-      const balance = await (await reverse).lockedBalance(erc20A.address);
-      expect(balance).to.equal(ethers.utils.parseEther("1"));
-    });
-
-    it("depositReverse should be reverted when not ADMIN role", async function () {
-      const { factory, reverseOp, otherAccount, erc20A } = await loadFixture(deployFactoryWithRole);
-      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
-      await expect(factory.connect(otherAccount).depositReverse(reverseAddr, erc20A.address, ethers.utils.parseEther("1")))
-          .to.be.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("ADMIN")}`);
+    it("setFeeReceiver should success", async function () {
+      const { factory, otherAccount } = await loadFixture(deployFactoryWithRole);
+      await factory.setFeeReceiver(otherAccount.address);
+      expect(await factory.feeReceiver()).to.equal(otherAccount.address);
     });
   });
 });

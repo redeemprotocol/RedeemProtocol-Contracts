@@ -3,14 +3,15 @@ import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { ethers, waffle, network } from "hardhat";
 import { defaultAbiCoder } from "@ethersproject/abi";
 const { provider } = waffle;
-import { RedeemProtocolReverse } from "../typechain-types";
+import { RedeemProtocolFactory, RedeemProtocolReverse } from "../typechain-types";
+import * as RPRByte from "../artifacts/contracts/RedeemProtocolReverse.sol/RedeemProtocolReverse.json";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { BigNumberish, Contract } from "ethers";
 import { _TypedDataEncoder } from "ethers/lib/utils";
-import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import { RPC20 } from "../typechain-types/contracts/test";
+import { erc20 } from "../typechain-types/@openzeppelin/contracts/token";
 
-describe.only("RedeemProtocolReverse", function () {
+describe("RedeemProtocolReverse", function () {
   const zeroBytes32 = ethers.utils.defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('')]);
   function getPermitData(
     owner: string,
@@ -81,34 +82,70 @@ describe.only("RedeemProtocolReverse", function () {
     };
   };
 
-  async function setBalance(
-    contractAddr: string,
-    token: RPC20,
-    freeAmount: string,
-    lockedAmount: string,
+  function getReverseInitCode(
+    address: string,
+    forwarder: string,
+    updateFee: any,
+    baseRedeemFee: any
   ) {
-    // lockedBalance index is 3
-    const lockedSlotIndex = 3;
-    const lockedSlot = ethers.utils.keccak256(
-      ethers.utils.defaultAbiCoder.encode(['address', 'uint'], [token.address, lockedSlotIndex])
-    );
-    const lockedValue = ethers.utils.defaultAbiCoder.encode(['uint256'], [ethers.utils.parseEther(lockedAmount)]);
-    await network.provider.send("hardhat_setStorageAt", [ contractAddr, lockedSlot, lockedValue]);
+    const encoded = ethers.utils.defaultAbiCoder.encode(
+      ['address', 'address', 'tuple(uint256,address)', 'tuple(uint256,address)'],
+      [
+        address,
+        forwarder,
+        [
+          updateFee.amount,
+          updateFee.token,
+        ],
+        [
+          baseRedeemFee.amount,
+          baseRedeemFee.token,
+        ]
+      ]
+    ).slice(2);
+    return ethers.utils.keccak256(`${RPRByte.bytecode}${encoded}`);
+  };
 
-    // freeBalance index is 4
-    const freeSlotIndex = 4;
-    const freeSlot = ethers.utils.keccak256(
-      ethers.utils.defaultAbiCoder.encode(['address', 'uint'], [token.address, freeSlotIndex])
+  async function createReverse(
+    factory: RedeemProtocolFactory,
+    reverseOp: SignerWithAddress,
+    tokenReceiver: string,
+    forwarder: string,
+    erc20: RPC20,
+    method: BigNumberish,
+    redeemAmount: string,
+    updateFee: string,
+    baseRedeemFee: string,
+  ) {
+    const initCode = getReverseInitCode(
+      reverseOp.address,
+      forwarder,
+      {
+        amount: ethers.utils.parseEther(updateFee),
+        token: erc20.address
+      },
+      {
+        amount: ethers.utils.parseEther(baseRedeemFee),
+        token: erc20.address
+      }
     );
-    const freeValue = ethers.utils.defaultAbiCoder.encode(['uint256'], [ethers.utils.parseEther(freeAmount)]);
-    await network.provider.send("hardhat_setStorageAt", [ contractAddr, freeSlot, freeValue]);
+    const salt = ethers.utils.defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [reverseOp.address, provider.network.chainId, 0]);
+    const create2Address = ethers.utils.getCreate2Address(
+      factory.address,
+      ethers.utils.keccak256(salt),
+      initCode,
+    );
 
-    await token.mint(contractAddr, ethers.utils.parseEther(freeAmount));
-    await token.mint(contractAddr, ethers.utils.parseEther(lockedAmount));
+    await factory.connect(reverseOp).createReverse(
+      method, ethers.utils.parseEther(redeemAmount),
+      tokenReceiver, forwarder, 0, 0, zeroBytes32, zeroBytes32,
+    );
+    
+    return await ethers.getContractAt("RedeemProtocolReverse", create2Address);
   };
   
   async function deployReverse() {
-    const [deployer, reverseOp, otherAccount] = await ethers.getSigners();
+    const [deployer, reverseOp, otherAccount, feeReceiver] = await ethers.getSigners();
 
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20A = await erc20Factory.deploy();
@@ -116,10 +153,12 @@ describe.only("RedeemProtocolReverse", function () {
     const erc721Factory = await ethers.getContractFactory("RPC721");
     const erc721A = await erc721Factory.deploy();
     const erc721B = await erc721Factory.deploy();
-    const Reverse = await ethers.getContractFactory("RedeemProtocolReverse");
-    const reverse = await Reverse.deploy(
-      reverseOp.address,
-      ethers.constants.AddressZero,
+    const Factory = await ethers.getContractFactory("RedeemProtocolFactory");
+    const factory = await Factory.deploy(
+      {
+        amount: ethers.utils.parseEther("0.1"),
+        token: erc20A.address,
+      },
       {
         amount: ethers.utils.parseEther("0.01"),
         token: erc20A.address,
@@ -127,13 +166,17 @@ describe.only("RedeemProtocolReverse", function () {
       {
         amount: ethers.utils.parseEther("0.001"),
         token: erc20A.address,
-      }
+      },
+      feeReceiver.address,
     );
-    await reverse.initialize(
-      0, ethers.utils.parseEther("0.01"), ethers.constants.AddressZero,
+    await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
+    await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), reverseOp.address);
+    const reverse = await createReverse(
+      factory, reverseOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 0, "0.005", "0.01", "0.001",
     );
 
-    return { deployer, reverse, reverseOp, otherAccount, erc20A, erc20B, erc721A, erc721B };
+    return { deployer, factory, reverse, reverseOp, otherAccount, feeReceiver, erc20A, erc20B, erc721A, erc721B };
   };
 
   async function deployReverseBaseRedeemFeeMark() {
@@ -218,7 +261,7 @@ describe.only("RedeemProtocolReverse", function () {
   };
 
   async function deployReverseWithMultiTokensMark() {
-    const [deployer, reverseOp, otherAccount] = await ethers.getSigners();
+    const [ deployer, reverseOp, otherAccount, feeReceiver ] = await ethers.getSigners();
 
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20A = await erc20Factory.deploy();
@@ -226,10 +269,12 @@ describe.only("RedeemProtocolReverse", function () {
     const erc721Factory = await ethers.getContractFactory("RPC721");
     const erc721A = await erc721Factory.deploy();
     const erc721B = await erc721Factory.deploy();
-    const Reverse = await ethers.getContractFactory("RedeemProtocolReverse");
-    const reverse = await Reverse.deploy(
-      reverseOp.address,
-      ethers.constants.AddressZero,
+    const Factory = await ethers.getContractFactory("RedeemProtocolFactory");
+    const factory = await Factory.deploy(
+      {
+        amount: ethers.utils.parseEther("0.1"),
+        token: erc20A.address,
+      },
       {
         amount: ethers.utils.parseEther("0.01"),
         token: erc20A.address,
@@ -237,17 +282,21 @@ describe.only("RedeemProtocolReverse", function () {
       {
         amount: ethers.utils.parseEther("0.001"),
         token: erc20A.address,
-      }
+      },
+      feeReceiver.address,
     );
-    await reverse.initialize(
-      0, ethers.utils.parseEther("0.01"), ethers.constants.AddressZero,
+    await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
+    await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), reverseOp.address);
+    const reverse = await createReverse(
+      factory, reverseOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 0, "0.005", "0.01", "0.001",
     );
 
-    return { reverse, reverseOp, otherAccount, erc20A, erc20B, erc721A, erc721B };
+    return { factory, reverse, reverseOp, otherAccount, feeReceiver, erc20A, erc20B, erc721A, erc721B };
   };
 
   async function deployReverseWithMultiTokensTransfer() {
-    const [deployer, reverseOp, otherAccount, receiver] = await ethers.getSigners();
+    const [ deployer, reverseOp, otherAccount, receiver, feeReceiver ] = await ethers.getSigners();
 
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20A = await erc20Factory.deploy();
@@ -257,10 +306,12 @@ describe.only("RedeemProtocolReverse", function () {
     const erc721B = await erc721Factory.deploy();
     const FF = await ethers.getContractFactory("MinimalForwarder");
     const forwarder = await FF.deploy();
-    const Reverse = await ethers.getContractFactory("RedeemProtocolReverse");
-    const reverse = await Reverse.deploy(
-      reverseOp.address,
-      forwarder.address,
+    const Factory = await ethers.getContractFactory("RedeemProtocolFactory");
+    const factory = await Factory.deploy(
+      {
+        amount: ethers.utils.parseEther("0.1"),
+        token: erc20A.address,
+      },
       {
         amount: ethers.utils.parseEther("0.01"),
         token: erc20A.address,
@@ -268,17 +319,21 @@ describe.only("RedeemProtocolReverse", function () {
       {
         amount: ethers.utils.parseEther("0.001"),
         token: erc20A.address,
-      }
+      },
+      feeReceiver.address,
     );
-    await reverse.initialize(
-      1, ethers.utils.parseEther("0.01"), receiver.address,
+    await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
+    await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), reverseOp.address);
+    const reverse = await createReverse(
+      factory, reverseOp, receiver.address, forwarder.address, erc20A, 1, "0.005", "0.01", "0.001",
     );
 
-    return { reverse, reverseOp, otherAccount, receiver, erc20A, erc20B, erc721A, erc721B, forwarder };
+    return { factory, reverse, reverseOp, otherAccount, receiver, erc20A, erc20B, erc721A, erc721B, forwarder };
   };
 
   async function deployReverseWithMultiTokensBurn() {
-    const [deployer, reverseOp, otherAccount] = await ethers.getSigners();
+    const [ deployer, reverseOp, otherAccount, feeReceiver ] = await ethers.getSigners();
 
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20A = await erc20Factory.deploy();
@@ -286,10 +341,12 @@ describe.only("RedeemProtocolReverse", function () {
     const erc721Factory = await ethers.getContractFactory("RPC721");
     const erc721A = await erc721Factory.deploy();
     const erc721B = await erc721Factory.deploy();
-    const Reverse = await ethers.getContractFactory("RedeemProtocolReverse");
-    const reverse = await Reverse.deploy(
-      reverseOp.address,
-      ethers.constants.AddressZero,
+    const Factory = await ethers.getContractFactory("RedeemProtocolFactory");
+    const factory = await Factory.deploy(
+      {
+        amount: ethers.utils.parseEther("0.1"),
+        token: erc20A.address,
+      },
       {
         amount: ethers.utils.parseEther("0.01"),
         token: erc20A.address,
@@ -297,13 +354,17 @@ describe.only("RedeemProtocolReverse", function () {
       {
         amount: ethers.utils.parseEther("0.001"),
         token: erc20A.address,
-      }
+      },
+      feeReceiver.address,
     );
-    await reverse.initialize(
-      2, ethers.utils.parseEther("0.01"), ethers.constants.AddressZero,
+    await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
+    await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), reverseOp.address);
+    const reverse = await createReverse(
+      factory, reverseOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 2, "0.005", "0.01", "0.001",
     );
 
-    return { reverse, reverseOp, otherAccount, erc20A, erc20B, erc721A, erc721B };
+    return { factory, reverse, reverseOp, otherAccount, erc20A, erc20B, erc721A, erc721B };
   };
 
   describe("permission", function () {
@@ -371,6 +432,7 @@ describe.only("RedeemProtocolReverse", function () {
 
     async function redeem(
       method: redeemMethod,
+      factory: RedeemProtocolFactory,
       reverse: RedeemProtocolReverse,
       redeemer: SignerWithAddress,
       erc20: Contract,
@@ -381,9 +443,7 @@ describe.only("RedeemProtocolReverse", function () {
       s: string,
       expReverseERC20Balance: string,
       expRedeemerERC20Balance: string,
-      expFreeBalance: string,
-      expLockedBalance: string,
-
+      expFeeReceiverERC20Balance: string,
     ) {
       let fn: any;
       switch(method) {
@@ -399,26 +459,35 @@ describe.only("RedeemProtocolReverse", function () {
       };
 
       const mockCustomId = ethers.utils.formatBytes32String('mock-custom-id');
-      expect(await fn(
+      await expect(fn(
         erc721.address, 0, mockCustomId, deadline, v, r, s,
-      )).to.emit(reverse, "Redeem").withArgs(
-        erc721.address, 0, 0, redeemer.address, mockCustomId,
+      )).to.emit(reverse, "Redeemed").withArgs(
+        erc721.address, 0, method-1, redeemer.address, mockCustomId,
       );
 
       expect(await erc20.balanceOf(reverse.address)).to.equal(ethers.utils.parseEther(expReverseERC20Balance));
       expect(await erc20.balanceOf(redeemer.address)).to.equal(ethers.utils.parseEther(expRedeemerERC20Balance));
-      expect(await reverse.freeBalance(erc20.address)).to.equal(ethers.utils.parseEther(expFreeBalance));
-      expect(await reverse.lockedBalance(erc20.address)).to.equal(ethers.utils.parseEther(expLockedBalance));
+      expect(await erc20.balanceOf(await factory.feeReceiver())).to.equal(ethers.utils.parseEther(expFeeReceiverERC20Balance));
+
+      if (method === redeemMethod.redeemWithTransfer) {
+        expect(await erc721.balanceOf(redeemer.address)).to.equal(0);
+        expect(await erc721.balanceOf(await reverse.tokenReceiver())).to.equal(1);
+        expect(await erc721.ownerOf(0)).to.equal(await reverse.tokenReceiver());
+      }
+
+      if (method === redeemMethod.redeemWithBurn) {
+        expect(await erc721.balanceOf(redeemer.address)).to.equal(0);
+      }
     };
 
-    it.only("with mark should be success", async function () {
-      const { reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensMark);
+    it("with mark should be success", async function () {
+      const { factory, reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensMark);
       await erc721A.safeMint(otherAccount.address);
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("1"));
       await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
       await redeem(
-        redeemMethod.redeemWithMark, reverse, otherAccount, erc20A, erc721A, 0, 0, zeroBytes32, zeroBytes32,
-        "0.01", "0.99", "0.009", "0.00",
+        redeemMethod.redeemWithMark, factory, reverse, otherAccount, erc20A, erc721A, 0, 0, zeroBytes32, zeroBytes32,
+        "0.004", "0.995", "0.101" // plus create reverse fee
       );
     });
 
@@ -428,7 +497,7 @@ describe.only("RedeemProtocolReverse", function () {
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("1"));
       await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
       
-      expect(await reverse.connect(otherAccount).redeemWithMark(
+      await expect(reverse.connect(otherAccount).redeemWithMark(
         erc721A.address, 0, zeroBytes32, 0, 0, zeroBytes32, zeroBytes32,
       )).to.emit(reverse, "Redeem").withArgs(
         erc721A.address, 0, 0, otherAccount.address, "",
@@ -446,7 +515,7 @@ describe.only("RedeemProtocolReverse", function () {
 
       await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
       const c1 = ethers.utils.defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('custom-id-1')]);
-      expect(await reverse.connect(otherAccount).redeemWithMark(
+      await expect(reverse.connect(otherAccount).redeemWithMark(
         erc721A.address, 0, c1, 0, 0, zeroBytes32, zeroBytes32,
       )).to.emit(reverse, "Redeem").withArgs(
         erc721A.address, 0, 0, otherAccount.address, "custom-id-1",
@@ -454,7 +523,7 @@ describe.only("RedeemProtocolReverse", function () {
 
       await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
       const c2 = ethers.utils.defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('custom-id-2')]);
-      expect(await reverse.connect(otherAccount).redeemWithMark(
+      await expect(reverse.connect(otherAccount).redeemWithMark(
         erc721A.address, 0, c2, 0, 0, zeroBytes32, zeroBytes32,
       )).to.emit(reverse, "Redeem").withArgs(
         erc721A.address, 0, 0, otherAccount.address, "custom-id-2",
@@ -462,31 +531,31 @@ describe.only("RedeemProtocolReverse", function () {
     });
 
     it("with transfer should be success", async function () {
-      const { reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensTransfer);
+      const { factory, reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensTransfer);
       await erc721A.safeMint(otherAccount.address);
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("1"));
       await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
       await erc721A.connect(otherAccount).approve(reverse.address, 0);
       await redeem(
-        redeemMethod.redeemWithTransfer, reverse, otherAccount, erc20A, erc721A, 0, 0, zeroBytes32, zeroBytes32,
-        "0.01", "0.99", "0.009", "0.00",
+        redeemMethod.redeemWithTransfer, factory, reverse, otherAccount, erc20A, erc721A, 0, 0, zeroBytes32, zeroBytes32,
+        "0.004", "0.995", "0.101",
       );
     });
 
     it("permit should be success", async function () {
-      const { reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensTransfer);
+      const { factory, reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensTransfer);
       await erc721A.safeMint(otherAccount.address);
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("1"));
       const deadline = Date.now() + 60;
       const permitData = getPermitData(
-        otherAccount.address, reverse.address, ethers.utils.parseEther("0.01"), 0, deadline, erc20A.address, "RPC20",
+        otherAccount.address, reverse.address, ethers.utils.parseEther("0.005"), 0, deadline, erc20A.address, "RPC20",
       );
       const permit = await otherAccount._signTypedData(permitData.domain, permitData.types, permitData.message);
       const sig = ethers.utils.splitSignature(permit);
       await erc721A.connect(otherAccount).approve(reverse.address, 0);
       await redeem(
-        redeemMethod.redeemWithTransfer, reverse, otherAccount, erc20A, erc721A, deadline, sig.v, sig.r, sig.s,
-        "0.01", "0.99", "0.009", "0",
+        redeemMethod.redeemWithTransfer, factory, reverse, otherAccount, erc20A, erc721A, deadline, sig.v, sig.r, sig.s,
+        "0.004", "0.995", "0.101",
       );
     });
 
@@ -514,9 +583,9 @@ describe.only("RedeemProtocolReverse", function () {
       );
       const sig = await otherAccount._signTypedData(meta.domain, meta.types, meta.message);
       await erc721A.connect(otherAccount).approve(reverse.address, 0);
-      await forwarder.connect(otherAccount).approve(erc20A.address, reverse.address, ethers.utils.parseEther("0.01"));
+      await forwarder.approve(erc20A.address, reverse.address, ethers.utils.parseEther("0.01"));
       
-      expect(await forwarder.connect(reverseOp).execute(
+      await forwarder.connect(reverseOp).execute(
         {
           from: otherAccount.address,
           to: reverse.address,
@@ -526,10 +595,10 @@ describe.only("RedeemProtocolReverse", function () {
           data: txData,
         },
         sig,
-      ));
+      );
 
       expect(await erc721A.ownerOf(0)).to.equal(receiver.address);
-      expect(await erc20A.balanceOf(forwarder.address)).to.equal(ethers.utils.parseEther("0.99"));
+      expect(await erc20A.balanceOf(forwarder.address)).to.equal(ethers.utils.parseEther("0.995"));
     });
 
     it("should be success with empty custom id", async function () {
@@ -539,140 +608,23 @@ describe.only("RedeemProtocolReverse", function () {
       await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
       await erc721A.connect(otherAccount).approve(reverse.address, 0);
       
-      expect(await reverse.connect(otherAccount).redeemWithTransfer(
+      await expect(reverse.connect(otherAccount).redeemWithTransfer(
         erc721A.address, 0, zeroBytes32, 0, 0, zeroBytes32, zeroBytes32,
       )).to.emit(reverse, "Redeem").withArgs(
         erc721A.address, 0, 0, otherAccount.address, "",
       );
     });
 
-    it("should deposit profit to freeBalance", async function () {
-      const { reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensTransfer);
-      await erc721A.safeMint(otherAccount.address);
-      await erc20A.mint(otherAccount.address, ethers.utils.parseEther("1"));
-      await setBalance(reverse.address, erc20A, "1", "0.5");
-
-      await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("1"));
-      await erc721A.connect(otherAccount).approve(reverse.address, 0);
-      await redeem(
-        redeemMethod.redeemWithTransfer, reverse, otherAccount, erc20A, erc721A, 0, 0, zeroBytes32, zeroBytes32,
-        "1.51", "0.99", "1.009", "0.5",
-      );
-    });
-
     it("with burn should be success", async function () {
-
-      const { reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensBurn);
+      const { factory, reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensBurn);
       await erc721A.safeMint(otherAccount.address);
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("1"));
       await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
       await erc721A.connect(otherAccount).approve(reverse.address, 0);
       await redeem(
-        redeemMethod.redeemWithBurn, reverse, otherAccount, erc20A, erc721A, 0, 0, zeroBytes32, zeroBytes32,
-        "0.01", "0.99", "0.009", "0.00",
+        redeemMethod.redeemWithBurn, factory, reverse, otherAccount, erc20A, erc721A, 0, 0, zeroBytes32, zeroBytes32,
+        "0.004", "0.995", "0.101",
       );
-    });
-
-    it("should pay baseRedeemFee", async function () {
-      const { reverse, otherAccount, erc20, erc721 } = await loadFixture(deployReverseBaseRedeemFeeTransfer);
-      await erc721.safeMint(otherAccount.address);
-      await erc20.mint(otherAccount.address, ethers.utils.parseEther("1"));
-      await setBalance(reverse.address, erc20, "0.4", "0.4");
-      
-      await erc20.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("1"));
-      await erc721.connect(otherAccount).approve(reverse.address, 0);
-      await redeem(
-        redeemMethod.redeemWithTransfer, reverse, otherAccount, erc20, erc721, 0, 0, zeroBytes32, zeroBytes32,
-        "1.8", "0", "0.4", "0.4",
-      );
-    });
-
-    it("should only deduct from lockedBalance", async function () {
-      const { reverse, otherAccount, erc20, erc721 } = await loadFixture(deployReverseBaseRedeemFeeTransfer);
-      await erc721.safeMint(otherAccount.address);
-      await erc20.mint(otherAccount.address, ethers.utils.parseEther("1"));
-      await setBalance(reverse.address, erc20, "1", "1");
-
-      await erc20.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("1"));
-      await erc721.connect(otherAccount).approve(reverse.address, 0);
-      await redeem(
-        redeemMethod.redeemWithTransfer, reverse, otherAccount, erc20, erc721, 0, 0, zeroBytes32, zeroBytes32,
-        "2.1", "0.9", "1", "0.1",
-      );
-    });
-
-    it("should only deduct from freeBalance", async function () {
-      const { reverse, otherAccount, erc20, erc721 } = await loadFixture(deployReverseBaseRedeemFeeTransfer);
-      await erc721.safeMint(otherAccount.address);
-      await erc20.mint(otherAccount.address, ethers.utils.parseEther("1"));
-      await setBalance(reverse.address, erc20, "1", "0");
-
-      await erc20.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("1"));
-      await erc721.connect(otherAccount).approve(reverse.address, 0);
-      await redeem(
-        redeemMethod.redeemWithTransfer, reverse, otherAccount, erc20, erc721, 0, 0, zeroBytes32, zeroBytes32,
-        "1.1", "0.9", "0.1", "0",
-      );
-    });
-
-    it("should deduct from lockedBalance first", async function () {
-      const { reverse, otherAccount, erc20, erc721 } = await loadFixture(deployReverseBaseRedeemFeeTransfer);
-      await erc721.safeMint(otherAccount.address);
-      await erc20.mint(otherAccount.address, ethers.utils.parseEther("1"));
-      await setBalance(reverse.address, erc20, "1", "0.5");
-
-      await erc20.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("1"));
-      await erc721.connect(otherAccount).approve(reverse.address, 0);
-      await redeem(
-        redeemMethod.redeemWithTransfer, reverse, otherAccount, erc20, erc721, 0, 0, zeroBytes32, zeroBytes32,
-        "1.6", "0.9", "0.6", "0",
-      );
-    });
-  });
-
-  describe("getRedeemFee", function () {
-    it("should be baseRedeemFee amount", async function () {
-      const { reverse, erc20 } = await loadFixture(deployReverseBaseRedeemFeeMark);
-      // lockedBalance index is 3
-      const lockedSlotIndex = 3;
-      const lockedSlot = ethers.utils.keccak256(
-        ethers.utils.defaultAbiCoder.encode(['address', 'uint'], [erc20.address, lockedSlotIndex])
-      );
-      const lockedValue = ethers.utils.defaultAbiCoder.encode(['uint256'], [ethers.utils.parseEther("0.4")]);
-      await network.provider.send("hardhat_setStorageAt", [ reverse.address, lockedSlot, lockedValue]);
-
-      // freeBalance index is 4
-      const freeSlotIndex = 4;
-      const freeSlot = ethers.utils.keccak256(
-        ethers.utils.defaultAbiCoder.encode(['address', 'uint'], [erc20.address, freeSlotIndex])
-      );
-      const freeValue = ethers.utils.defaultAbiCoder.encode(['uint256'], [ethers.utils.parseEther("0.49")]);
-      await network.provider.send("hardhat_setStorageAt", [ reverse.address, freeSlot, freeValue]);
-      
-      const [_, amount] = await reverse.getRedeemFee();
-      expect(amount).to.equal(ethers.utils.parseEther("1"));
-    });
-
-    it("should be redeemAmount", async function () {
-      const { reverse, erc20 } = await loadFixture(deployReverseBaseRedeemFeeMark);
-      // lockedBalance index is 3
-      const lockedSlotIndex = 3;
-      const lockedSlot = ethers.utils.keccak256(
-        ethers.utils.defaultAbiCoder.encode(['address', 'uint'], [erc20.address, lockedSlotIndex])
-      );
-      const lockedValue = ethers.utils.defaultAbiCoder.encode(['uint256'], [ethers.utils.parseEther("0.4")]);
-      await network.provider.send("hardhat_setStorageAt", [ reverse.address, lockedSlot, lockedValue]);
-
-      // freeBalance index is 4
-      const freeSlotIndex = 4;
-      const freeSlot = ethers.utils.keccak256(
-        ethers.utils.defaultAbiCoder.encode(['address', 'uint'], [erc20.address, freeSlotIndex])
-      );
-      const freeValue = ethers.utils.defaultAbiCoder.encode(['uint256'], [ethers.utils.parseEther("0.51")]);
-      await network.provider.send("hardhat_setStorageAt", [ reverse.address, freeSlot, freeValue]);
-      
-      const [_, amount] = await reverse.getRedeemFee();
-      expect(amount).to.equal(ethers.utils.parseEther("0.1"));
     });
   });
 
@@ -689,6 +641,7 @@ describe.only("RedeemProtocolReverse", function () {
       r: string,
       s: string,
       expBalance: string,
+      feeReceiver: string,
     ) {
       await reverse.connect(updater).updateReverse(
         method, ethers.utils.parseEther(redeemAmount), tokenReceiver,
@@ -698,20 +651,21 @@ describe.only("RedeemProtocolReverse", function () {
       expect(await reverse.redeemMethod()).to.equal(method);
       expect(await reverse.tokenReceiver()).to.equal(tokenReceiver);
       expect(await erc20.balanceOf(updater.address)).to.equal(ethers.utils.parseEther(expBalance));
+      expect(await erc20.balanceOf(feeReceiver)).to.equal(ethers.utils.parseEther("0.11"));
     };
 
     it("should update reverse with mark success", async function () {
-      const { reverse, reverseOp, erc20A, erc721B } = await loadFixture(deployReverse);
+      const { reverse, reverseOp, erc20A, feeReceiver } = await loadFixture(deployReverse);
       await erc20A.mint(reverseOp.address, ethers.utils.parseEther("1"));
       await erc20A.connect(reverseOp).approve(reverse.address, ethers.utils.parseEther("0.01"));
       await updateReverse(
         reverse, reverseOp, 0, "1", erc20A, ethers.constants.AddressZero,
-        0, 0, zeroBytes32, zeroBytes32, "0.99",
+        0, 0, zeroBytes32, zeroBytes32, "0.99", feeReceiver.address,
       );
     });
 
     it("should update reverse with transfer success", async function () {
-      const { reverse, reverseOp, otherAccount, erc20A } = await loadFixture(deployReverse);
+      const { reverse, reverseOp, otherAccount, feeReceiver, erc20A } = await loadFixture(deployReverse);
       const erc721Factory = await ethers.getContractFactory("RPC721");
       const erc721 = await erc721Factory.connect(reverseOp).deploy();
       await erc20A.mint(reverseOp.address, ethers.utils.parseEther("1"));
@@ -719,12 +673,12 @@ describe.only("RedeemProtocolReverse", function () {
       
       await updateReverse(
         reverse, reverseOp, 1, "1", erc20A, otherAccount.address,
-        0, 0, zeroBytes32, zeroBytes32, "0.99",
+        0, 0, zeroBytes32, zeroBytes32, "0.99", feeReceiver.address,
       );
     });
 
     it("should update reverse with burn success", async function () {
-      const { reverse, reverseOp, otherAccount, erc20A } = await loadFixture(deployReverse);
+      const { reverse, reverseOp, otherAccount, feeReceiver, erc20A } = await loadFixture(deployReverse);
       const erc721Factory = await ethers.getContractFactory("RPC721");
       const erc721 = await erc721Factory.connect(reverseOp).deploy();
       await erc20A.mint(reverseOp.address, ethers.utils.parseEther("1"));
@@ -732,12 +686,12 @@ describe.only("RedeemProtocolReverse", function () {
       
       await updateReverse(
         reverse, reverseOp, 2, "1", erc20A, otherAccount.address,
-        0, 0, zeroBytes32, zeroBytes32, "0.99",
+        0, 0, zeroBytes32, zeroBytes32, "0.99", feeReceiver.address,
       );
     });
 
     it("should update reverse with mark permit success", async function () {
-      const { reverse, reverseOp, erc20A, erc721B } = await loadFixture(deployReverse);
+      const { reverse, reverseOp, erc20A, feeReceiver } = await loadFixture(deployReverse);
       await erc20A.mint(reverseOp.address, ethers.utils.parseEther("1"));
       const deadline = Date.now() + 60;
       const permitData = getPermitData(
@@ -747,7 +701,7 @@ describe.only("RedeemProtocolReverse", function () {
       const sig = ethers.utils.splitSignature(permit);
       await updateReverse(
         reverse, reverseOp, 0, "1", erc20A, ethers.constants.AddressZero,
-        deadline, sig.v, sig.r, sig.s, "0.99",
+        deadline, sig.v, sig.r, sig.s, "0.99", feeReceiver.address,
       );
     });
 
@@ -784,14 +738,14 @@ describe.only("RedeemProtocolReverse", function () {
     });
   });
 
+
   describe("withdraw", function () {
     it("should be success", async function () {
       const { reverse, reverseOp, otherAccount, erc20A } = await loadFixture(deployReverse);
-      await setBalance(reverse.address, erc20A, "1", "1");
+      await erc20A.mint(reverse.address, ethers.utils.parseEther("1"));
       await reverse.connect(reverseOp).withdraw(erc20A.address, ethers.utils.parseEther("0.9"), otherAccount.address);
       expect(await erc20A.balanceOf(otherAccount.address)).to.eq(ethers.utils.parseEther("0.9"));
-      expect(await reverse.freeBalance(erc20A.address)).to.equal(ethers.utils.parseEther("0.1"));
-      expect(await reverse.lockedBalance(erc20A.address)).to.equal(ethers.utils.parseEther("1"));
+      expect(await erc20A.balanceOf(reverse.address)).to.equal(ethers.utils.parseEther("0.1"));
     });
 
     it("should be reverted when not ADMIN role", async function () {
@@ -799,19 +753,12 @@ describe.only("RedeemProtocolReverse", function () {
       await expect(reverse.connect(otherAccount).withdraw(erc20A.address, ethers.utils.parseEther("0.9"), otherAccount.address))
         .to.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("ADMIN")}`);
     });
-
-    it("should be reverted when not enough balance", async function () {
-      const { reverse, reverseOp, otherAccount, erc20A } = await loadFixture(deployReverse);
-      await setBalance(reverse.address, erc20A, "1", "1");
-      await expect(reverse.connect(reverseOp).withdraw(erc20A.address, ethers.utils.parseEther("1.1"), otherAccount.address))
-        .to.revertedWith("not enough balance");
-    });
   });
 
   describe("pause", function () {
     it("should pause success", async function () {
-      const { deployer, reverse } = await loadFixture(deployReverse);
-      await reverse.connect(deployer).pause();
+      const { factory, reverse } = await loadFixture(deployReverse);
+      await factory.pauseReverse(reverse.address);
       expect(await reverse.paused()).to.be.true;
     });
 
@@ -821,17 +768,17 @@ describe.only("RedeemProtocolReverse", function () {
     });
 
     it("should be reverted when paused, redeemWithMark", async function () {
-      const { deployer, reverse, erc721A } = await loadFixture(deployReverse);
-      await reverse.connect(deployer).pause();
+      const { factory, reverse, otherAccount, erc721A } = await loadFixture(deployReverse);
+      await factory.pauseReverse(reverse.address);
       const mockCustomId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('mock-custom-id')]);
-      await expect(reverse.connect(deployer).redeemWithMark(
+      await expect(reverse.connect(otherAccount).redeemWithMark(
         erc721A.address, 0, mockCustomId, 0, 0, zeroBytes32, zeroBytes32,
       )).to.revertedWith("Pausable: paused");
     });
 
     it("should be reverted when paused, updateReverse", async function () {
-      const { deployer, reverse, reverseOp } = await loadFixture(deployReverse);
-      await reverse.connect(deployer).pause();
+      const { factory, reverse, reverseOp } = await loadFixture(deployReverse);
+      await factory.pauseReverse(reverse.address);
       await expect(reverse.connect(reverseOp).updateReverse(
         0, ethers.utils.parseEther("1"), ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32,
@@ -839,37 +786,17 @@ describe.only("RedeemProtocolReverse", function () {
     });
 
     it("should be reverted when paused, grantOperator", async function () {
-      const { deployer, reverse, reverseOp, otherAccount } = await loadFixture(deployReverse);
-      await reverse.connect(deployer).pause();
+      const { factory, reverse, reverseOp, otherAccount } = await loadFixture(deployReverse);
+      await factory.pauseReverse(reverse.address);
       await expect(reverse.connect(reverseOp).grantOperator(otherAccount.address))
         .to.revertedWith("Pausable: paused");
     });
 
     it("should be reverted when paused, withdraw", async function () {
-      const { deployer, reverse, reverseOp, otherAccount, erc20A } = await loadFixture(deployReverse);
-      await reverse.connect(deployer).pause();
-      await setBalance(reverse.address, erc20A, "1", "1");
+      const { factory, reverse, reverseOp, otherAccount, erc20A } = await loadFixture(deployReverse);
+      await factory.pauseReverse(reverse.address);
       await expect(reverse.connect(reverseOp).withdraw(erc20A.address, ethers.utils.parseEther("0.9"), otherAccount.address))
         .to.revertedWith("Pausable: paused");
-    });
-  });
-
-  describe("withdrawByFactory", function () {
-    it("should be success", async function () {
-      const { deployer, reverse, otherAccount, erc20A } = await loadFixture(deployReverse);
-      await setBalance(reverse.address, erc20A, "1", "1");
-      await erc20A.mint(reverse.address, ethers.utils.parseEther("1"));
-      await reverse.connect(deployer).withdrawByFactory(erc20A.address, ethers.utils.parseEther("0.9"), otherAccount.address);
-      expect(await erc20A.balanceOf(reverse.address)).to.equal(ethers.utils.parseEther("2.1"));
-      expect(await erc20A.balanceOf(otherAccount.address)).to.eq(ethers.utils.parseEther("0.9"));
-      expect(await reverse.freeBalance(erc20A.address)).to.equal(ethers.utils.parseEther("1"));
-      expect(await reverse.lockedBalance(erc20A.address)).to.equal(ethers.utils.parseEther("1"));
-    });
-
-    it("should be reverted when not from factory", async function () {
-      const { reverse, reverseOp, otherAccount, erc20A } = await loadFixture(deployReverse);
-      await expect(reverse.connect(reverseOp).withdrawByFactory(erc20A.address, ethers.utils.parseEther("0.9"), otherAccount.address))
-        .to.revertedWith("only factory");
     });
   });
 });

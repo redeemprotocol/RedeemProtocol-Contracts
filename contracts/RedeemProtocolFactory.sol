@@ -27,6 +27,7 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
     mapping(address => RedeemProtocolType.Fee) public designateUpdateFee;
     mapping(address => RedeemProtocolType.Fee) public designateBaseRedeemFee;
     mapping(address => bool) public validRedeemToken;
+    address public feeReceiver;
 
     address[] public allReverses;
 
@@ -35,7 +36,8 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
     constructor(
         RedeemProtocolType.Fee memory _defaultSetupFee,
         RedeemProtocolType.Fee memory _defaultUpdateFee,
-        RedeemProtocolType.Fee memory _defaultBaseRedeemFee 
+        RedeemProtocolType.Fee memory _defaultBaseRedeemFee,
+        address _feeReceiver
     ) {
         _grantRole(ADMIN, msg.sender);
         _grantRole(OPERATOR, msg.sender);
@@ -49,6 +51,7 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
         defaultUpdateFee = _defaultUpdateFee;
         defaultBaseRedeemFee = _defaultBaseRedeemFee;
         validRedeemToken[_defaultBaseRedeemFee.token] = true;
+        feeReceiver = _feeReceiver;
     }
 
     function createReverse(
@@ -96,7 +99,7 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
             IERC20Permit(setupFee.token).permit(msg.sender, address(this), setupFee.amount, _deadline, _v, _r, _s);
         }
-        bool ok = IERC20Permit(setupFee.token).transferFrom(msg.sender, address(this), setupFee.amount);
+        bool ok = IERC20Permit(setupFee.token).transferFrom(msg.sender, feeReceiver, setupFee.amount);
         require(ok, "fee payment failed");
         }
         emit ReverseCreated(msg.sender, reverse);
@@ -176,13 +179,7 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
         require(ok, "withdraw failed");
     }
 
-    function withdrawReverse(address _reverse, address _token, uint256 _amount, address _receiver) external nonReentrant onlyRole(ADMIN) {
-        RedeemProtocolReverse(_reverse).withdrawByFactory(_token, _amount, _receiver);
-    }
-
-    function depositReverse(address _reverse, address _token, uint256 _amount) external nonReentrant onlyRole(ADMIN) {
-        RedeemProtocolReverse(_reverse).depositByFactory(_token, _amount);
-        bool ok = IERC20Permit(_token).transferFrom(msg.sender, _reverse, _amount);
-        require(ok, "deposit failed");
+    function setFeeReceiver(address _feeReceiver) external onlyRole(ADMIN) {
+        feeReceiver = _feeReceiver;
     }
 }
