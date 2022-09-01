@@ -499,13 +499,13 @@ describe("RedeemProtocolReverse", function () {
       
       await expect(reverse.connect(otherAccount).redeemWithMark(
         erc721A.address, 0, zeroBytes32, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.emit(reverse, "Redeem").withArgs(
-        erc721A.address, 0, 0, otherAccount.address, "",
+      )).to.emit(reverse, "Redeemed").withArgs(
+        erc721A.address, 0, 0, otherAccount.address, ethers.utils.formatBytes32String('DEFAULT_CUSTOM_ID'),
       );
 
       await expect(reverse.connect(otherAccount).redeemWithMark(
         erc721A.address, 0, zeroBytes32, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.revertedWith("token has been redeemed");
+      )).to.be.revertedWith("token has been redeemed");
     });
 
     it("should be success with different custom id", async function () {
@@ -514,19 +514,17 @@ describe("RedeemProtocolReverse", function () {
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("1"));
 
       await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
-      const c1 = ethers.utils.defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('custom-id-1')]);
       await expect(reverse.connect(otherAccount).redeemWithMark(
-        erc721A.address, 0, c1, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.emit(reverse, "Redeem").withArgs(
-        erc721A.address, 0, 0, otherAccount.address, "custom-id-1",
+        erc721A.address, 0, ethers.utils.formatBytes32String('custom-id-1'), 0, 0, zeroBytes32, zeroBytes32,
+      )).to.emit(reverse, "Redeemed").withArgs(
+        erc721A.address, 0, 0, otherAccount.address, ethers.utils.formatBytes32String('custom-id-1'),
       );
 
       await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
-      const c2 = ethers.utils.defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('custom-id-2')]);
       await expect(reverse.connect(otherAccount).redeemWithMark(
-        erc721A.address, 0, c2, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.emit(reverse, "Redeem").withArgs(
-        erc721A.address, 0, 0, otherAccount.address, "custom-id-2",
+        erc721A.address, 0, ethers.utils.formatBytes32String('custom-id-2'), 0, 0, zeroBytes32, zeroBytes32,
+      )).to.emit(reverse, "Redeemed").withArgs(
+        erc721A.address, 0, 0, otherAccount.address, ethers.utils.formatBytes32String('custom-id-2'),
       );
     });
 
@@ -610,8 +608,8 @@ describe("RedeemProtocolReverse", function () {
       
       await expect(reverse.connect(otherAccount).redeemWithTransfer(
         erc721A.address, 0, zeroBytes32, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.emit(reverse, "Redeem").withArgs(
-        erc721A.address, 0, 0, otherAccount.address, "",
+      )).to.emit(reverse, "Redeemed").withArgs(
+        erc721A.address, 0, 1, otherAccount.address, ethers.utils.formatBytes32String("DEFAULT_CUSTOM_ID"),
       );
     });
 
@@ -710,7 +708,7 @@ describe("RedeemProtocolReverse", function () {
       await expect(reverse.connect(otherAccount).updateReverse(
         0, ethers.utils.parseEther("1"), ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32,
-      )).to.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("OPERATOR")}`);
+      )).to.be.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("OPERATOR")}`);
     });
 
     it("should be reverted when tokenReceiver is zero address, transfer", async function () {
@@ -720,7 +718,15 @@ describe("RedeemProtocolReverse", function () {
       await expect(reverse.connect(reverseOp).updateReverse(
         1, ethers.utils.parseEther("1"), ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32,
-      )).to.revertedWith("tokenReceiver must be set");
+      )).to.be.revertedWith("tokenReceiver must be set");
+    });
+
+    it("should be reverted when redeem amount less than base redeem fee", async function () {
+      const { reverse, reverseOp, erc20A, feeReceiver } = await loadFixture(deployReverse);
+      await expect(updateReverse(
+        reverse, reverseOp, 0, "0.0009", erc20A, ethers.constants.AddressZero,
+        0, 0, zeroBytes32, zeroBytes32, "0.99", feeReceiver.address,
+      )).to.be.revertedWith("redeemAmount must be greater than baseRedeemFee");
     });
   });
 
@@ -734,7 +740,7 @@ describe("RedeemProtocolReverse", function () {
     it("should be reverted when not ADMIN role", async function () {
       const { reverse, otherAccount } = await loadFixture(deployReverse);
       await expect(reverse.connect(otherAccount).grantOperator(otherAccount.address))
-        .to.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("ADMIN")}`);
+        .to.be.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("ADMIN")}`);
     });
   });
 
@@ -751,7 +757,7 @@ describe("RedeemProtocolReverse", function () {
     it("should be reverted when not ADMIN role", async function () {
       const { reverse, otherAccount, erc20A } = await loadFixture(deployReverse);
       await expect(reverse.connect(otherAccount).withdraw(erc20A.address, ethers.utils.parseEther("0.9"), otherAccount.address))
-        .to.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("ADMIN")}`);
+        .to.be.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("ADMIN")}`);
     });
   });
 
@@ -764,7 +770,7 @@ describe("RedeemProtocolReverse", function () {
 
     it("should be reverted when not from factory", async function () {
       const { reverse, reverseOp } = await loadFixture(deployReverse);
-      await expect(reverse.connect(reverseOp).pause()).to.revertedWith("only factory");
+      await expect(reverse.connect(reverseOp).pause()).to.be.revertedWith("only factory");
     });
 
     it("should be reverted when paused, redeemWithMark", async function () {
@@ -773,7 +779,7 @@ describe("RedeemProtocolReverse", function () {
       const mockCustomId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('mock-custom-id')]);
       await expect(reverse.connect(otherAccount).redeemWithMark(
         erc721A.address, 0, mockCustomId, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.revertedWith("Pausable: paused");
+      )).to.be.revertedWith("Pausable: paused");
     });
 
     it("should be reverted when paused, updateReverse", async function () {
@@ -782,21 +788,21 @@ describe("RedeemProtocolReverse", function () {
       await expect(reverse.connect(reverseOp).updateReverse(
         0, ethers.utils.parseEther("1"), ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32,
-      )).to.revertedWith("Pausable: paused");
+      )).to.be.revertedWith("Pausable: paused");
     });
 
     it("should be reverted when paused, grantOperator", async function () {
       const { factory, reverse, reverseOp, otherAccount } = await loadFixture(deployReverse);
       await factory.pauseReverse(reverse.address);
       await expect(reverse.connect(reverseOp).grantOperator(otherAccount.address))
-        .to.revertedWith("Pausable: paused");
+        .to.be.revertedWith("Pausable: paused");
     });
 
     it("should be reverted when paused, withdraw", async function () {
       const { factory, reverse, reverseOp, otherAccount, erc20A } = await loadFixture(deployReverse);
       await factory.pauseReverse(reverse.address);
       await expect(reverse.connect(reverseOp).withdraw(erc20A.address, ethers.utils.parseEther("0.9"), otherAccount.address))
-        .to.revertedWith("Pausable: paused");
+        .to.be.revertedWith("Pausable: paused");
     });
   });
 });

@@ -748,6 +748,7 @@ describe("RedeemProtocolFactory", function() {
       const baseRedeemFee = await reverse.baseRedeemFee();
       expect(baseRedeemFee.amount).to.equal(ethers.utils.parseEther("1"));
       expect(baseRedeemFee.token).to.equal(erc20B.address);
+      expect(await reverse.redeemAmount()).to.equal(ethers.utils.parseEther("1"));
     });
 
     it("setBaseRedeemFee reverted when not OPERATOR role", async function () {
@@ -773,6 +774,13 @@ describe("RedeemProtocolFactory", function() {
       await expect(factory.connect(otherAccount)
         .setRedeemAmount(reverseAddr, ethers.utils.parseEther("1")))
         .to.be.revertedWith("AccessControl: account 0x90f79bf6eb2c4f870365e785982e1f101e93b906 is missing role 0x523a704056dcd17bcf83bed8b68c59416dac1119be77755efe3bde0a64e46e0c");
+    });
+
+    it("setRedeemAmount reverted when redeemAmount less than baseRedeemFee", async function () {
+      const { factory, op, reverseOp, erc20A } = await loadFixture(deployFactoryWithRole);
+      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
+      await expect(factory.connect(op).setRedeemAmount(reverseAddr, ethers.utils.parseEther("0.0009")))
+        .to.be.revertedWith("redeemAmount must be greater than baseRedeemFee");
     });
   });
 
