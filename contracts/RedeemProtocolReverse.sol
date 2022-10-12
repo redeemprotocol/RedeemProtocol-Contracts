@@ -39,7 +39,12 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         address redeemer,
         bytes32 customId
     );
-    // TODO: check test ID purpose
+
+    event Updated(
+        uint256 indexed redeemAmount,
+        RedeemProtocolType.RedeemMethod indexed redeemMethod,
+        address indexed tokenReceiver
+    );
 
     constructor(
         address reverseOp,
@@ -184,6 +189,8 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         redeemMethod = _method;
         redeemAmount = _redeemAmount;
         tokenReceiver = _tokenReceiver;
+
+        emit Updated(_redeemAmount, _method, _tokenReceiver);
     }
 
     // admin methods
