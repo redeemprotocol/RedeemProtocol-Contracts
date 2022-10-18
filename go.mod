@@ -1,4 +1,4 @@
-module github.com/redeemprotocol/core
+module github.com/redeemprotocol/core/v2
 
 go 1.17
 
