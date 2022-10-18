@@ -1,1 +1,1 @@
-# Redeem Protocol Contract
+# Redeem Protocol Contract V2
