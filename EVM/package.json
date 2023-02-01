@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.8.1"
+  },
+  "name": "redeemprotocol-contracts",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:redeemprotocol/core.git",
+  "author": "Redeem Protocol DAO <official@redreamer.io>",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^1.0.5",
+    "@nomicfoundation/hardhat-toolbox": "^2.0.1",
+    "@nomiclabs/hardhat-waffle": "^2.0.3"
+  }
+}

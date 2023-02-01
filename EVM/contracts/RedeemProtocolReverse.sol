@@ -6,11 +6,11 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/metatx/ERC2771Context.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./libraries/RedeemProtocolType.sol";
-import "./interfaces/IERC721.sol";
-import "./interfaces/IERC721Burnable.sol";
-import "./interfaces/IERC20.sol";
 import "./interfaces/IERC20Permit.sol";
+import "./interfaces/IERC721Burnable.sol";
 import "./RedeemProtocolFactory.sol";
 
 // NOTE: probably don't use ERC2771Context since _trustedForwarder is immutable
