@@ -1,5 +1,6 @@
 #include <eosio/eosio.hpp>
 #include <eosio/singleton.hpp>
+#include <eosio/asset.hpp>
 
 using namespace eosio;
 using namespace std;
@@ -32,15 +33,11 @@ public:
     {
         uint64_t asset_id;
         uint64_t redemption_id;
-        name redeemer;
         string method;
 
         uint64_t primary_key() const { return asset_id; }
-        uint64_t by_secondary() const { return redemption_id; }
     };
-    typedef multi_index<"redemption"_n, redemption_s,
-        indexed_by< "bysecondary"_n, const_mem_fun<redemption_s, uint64_t, &redemption_s::by_secondary> > 
-    > redemption_t;
+    typedef multi_index<"redemption"_n, redemption_s> redemption_t;
 
     // redemption_t redemptions;
 
@@ -55,4 +52,20 @@ public:
 
     config_t config = config_t(get_self(), get_self().value);
     redemption_t get_redemption();
+
+    struct assets_s {
+        uint64_t         asset_id;
+        name             collection_name;
+        name             schema_name;
+        int32_t          template_id;
+        name             ram_payer;
+        vector <asset>   backed_tokens;
+        vector <uint8_t> immutable_serialized_data;
+        vector <uint8_t> mutable_serialized_data;
+
+        uint64_t primary_key() const { return asset_id; };
+    };
+
+    typedef multi_index <name("assets"), assets_s> assets_t;
+    assets_t get_asset(name owner);
 };

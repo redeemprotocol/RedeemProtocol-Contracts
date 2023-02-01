@@ -11,6 +11,12 @@ ACTION redeemprotocol::mark(
 {
     require_auth(asset_owner);
 
+    auto a = get_asset(asset_owner);
+    auto aitr = a.find(asset_id);
+    check(aitr != a.end(),
+        "not asset owner");
+
+
     auto r = get_redemption();
     auto itr = r.find(asset_id);
     check(itr == r.end(),
@@ -20,10 +26,9 @@ ACTION redeemprotocol::mark(
     uint64_t redemption_id = current_config.redemption_counter++;
     config.set(current_config, get_self());
     
-    r.emplace( get_self(), [&]( auto& row ) {
+    r.emplace( asset_owner, [&]( auto& row ) {
         row.redemption_id = redemption_id;
         row.asset_id = asset_id;
-        row.redeemer = asset_owner;
         row.method = string("mark");
     });
 }
@@ -44,10 +49,9 @@ ACTION redeemprotocol::transfer(
     name token_receiver = current_config.token_receiver;
     config.set(current_config, get_self());
     
-    r.emplace( get_self(), [&]( auto& row ) {
+    r.emplace( asset_owner, [&]( auto& row ) {
         row.redemption_id = redemption_id;
         row.asset_id = asset_id;
-        row.redeemer = asset_owner;
         row.method = string("transfer");
     });
 
@@ -79,10 +83,9 @@ ACTION redeemprotocol::burn(
     uint64_t redemption_id = current_config.redemption_counter++;
     config.set(current_config, get_self());
     
-    r.emplace( get_self(), [&]( auto& row ) {
+    r.emplace( asset_owner, [&]( auto& row ) {
         row.redemption_id = redemption_id;
         row.asset_id = asset_id;
-        row.redeemer = asset_owner;
         row.method = string("burn");
     });
 
@@ -105,4 +108,8 @@ ACTION redeemprotocol::settr(name new_token_receiver) {
 
 redeemprotocol::redemption_t redeemprotocol::get_redemption() {
     return redemption_t(get_self(), get_self().value);
+}
+
+redeemprotocol::assets_t redeemprotocol::get_asset(name owner) {
+    return assets_t("atomicassets"_n, owner.value);
 }
