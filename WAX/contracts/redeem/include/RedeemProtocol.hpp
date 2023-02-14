@@ -14,26 +14,32 @@ public:
 
     ACTION mark(
         name asset_owner,
+        string order_id,
         uint64_t asset_id
     );
 
     ACTION transfer(
         name asset_owner,
+        string order_id,
         uint64_t asset_id
     );
 
     ACTION burn(
         name asset_owner,
+        string order_id,
         uint64_t asset_id
     );
 
     ACTION settr(name new_token_receiver);
 
+    ACTION refund(uint64_t asset_id);
+
     TABLE redemption_s
     {
         uint64_t asset_id;
-        uint64_t redemption_id;
+        string order_id;
         string method;
+        name requester;
 
         uint64_t primary_key() const { return asset_id; }
     };
@@ -43,7 +49,6 @@ public:
 
     TABLE config_s
     {
-        uint64_t redemption_counter = 1099511627776; // 2^40
         name token_receiver = name("waxchihkaiyu");
     };
     typedef singleton<name("config"), config_s> config_t;
