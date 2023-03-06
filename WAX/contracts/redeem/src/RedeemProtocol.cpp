@@ -7,6 +7,7 @@ ACTION redeemprotocol::init() {
 
 ACTION redeemprotocol::mark(
     name asset_owner,
+    string order_id,
     uint64_t asset_id)
 {
     require_auth(asset_owner);
@@ -23,18 +24,19 @@ ACTION redeemprotocol::mark(
         "This asset has been redeemed");
     
     config_s current_config = config.get();
-    uint64_t redemption_id = current_config.redemption_counter++;
     config.set(current_config, get_self());
     
     r.emplace( asset_owner, [&]( auto& row ) {
-        row.redemption_id = redemption_id;
+        row.order_id = order_id;
         row.asset_id = asset_id;
         row.method = string("mark");
+        row.requester = asset_owner;
     });
 }
 
 ACTION redeemprotocol::transfer(
     name asset_owner,
+    string order_id,
     uint64_t asset_id)
 {
     require_auth(asset_owner);
@@ -45,14 +47,14 @@ ACTION redeemprotocol::transfer(
         "This asset has been redeemed");
     
     config_s current_config = config.get();
-    uint64_t redemption_id = current_config.redemption_counter++;
     name token_receiver = current_config.token_receiver;
     config.set(current_config, get_self());
     
     r.emplace( asset_owner, [&]( auto& row ) {
-        row.redemption_id = redemption_id;
+        row.order_id = order_id;
         row.asset_id = asset_id;
         row.method = string("transfer");
+        row.requester = asset_owner;
     });
 
     vector<uint64_t> asset_ids{asset_id};
@@ -70,6 +72,7 @@ ACTION redeemprotocol::transfer(
 
 ACTION redeemprotocol::burn(
     name asset_owner,
+    string order_id,
     uint64_t asset_id)
 {
     require_auth(asset_owner);
@@ -80,13 +83,13 @@ ACTION redeemprotocol::burn(
         "This asset has been redeemed");
     
     config_s current_config = config.get();
-    uint64_t redemption_id = current_config.redemption_counter++;
     config.set(current_config, get_self());
     
     r.emplace( asset_owner, [&]( auto& row ) {
-        row.redemption_id = redemption_id;
+        row.order_id = order_id;
         row.asset_id = asset_id;
         row.method = string("burn");
+        row.requester = asset_owner;
     });
 
     action(
@@ -104,6 +107,31 @@ ACTION redeemprotocol::settr(name new_token_receiver) {
     config_s current_config = config.get();
     current_config.token_receiver = new_token_receiver;
     config.set(current_config, get_self());
+}
+
+ACTION redeemprotocol::refund(uint64_t asset_id) {
+    config_s current_config = config.get();
+    require_auth(current_config.token_receiver);
+    auto r = get_redemption();
+    auto itr = r.find(asset_id);
+    check(itr != r.end(),
+        "redemption not found");
+
+    if (itr->method == "transfer") {
+        vector<uint64_t> asset_ids{asset_id};
+        action(
+            permission_level{current_config.token_receiver, name("active")},
+            name("atomicassets"),
+            name("transfer"),
+            make_tuple(
+                current_config.token_receiver,
+                itr->requester,
+                asset_ids,
+                string("RE:DREAMER refund"))
+        ).send();
+    }
+
+    r.erase(itr);
 }
 
 redeemprotocol::redemption_t redeemprotocol::get_redemption() {
