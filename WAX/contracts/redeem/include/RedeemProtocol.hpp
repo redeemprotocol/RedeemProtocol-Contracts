@@ -12,6 +12,28 @@ public:
 
     ACTION init();
 
+    /* Redeemable NFT Standards for vIRL NFT. */
+
+    /// @brief 
+    /// @param asset_owner 
+    /// @param order_id 
+    /// @param asset_id 
+    /// @return 
+    ACTION redeem(
+        name asset_owner,
+        string order_id,
+        uint64_t asset_id
+    );
+
+    /// @brief 
+    /// @param order_id 
+    /// @param asset_id 
+    /// @return 
+    ACTION cancel(
+        string order_id,
+        uint64_t asset_id
+    );
+
     ACTION mark(
         name asset_owner,
         string order_id,
