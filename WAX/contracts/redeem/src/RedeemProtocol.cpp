@@ -141,3 +141,7 @@ redeemprotocol::redemption_t redeemprotocol::get_redemption() {
 redeemprotocol::assets_t redeemprotocol::get_asset(name owner) {
     return assets_t("atomicassets"_n, owner.value);
 }
+
+void redeemprotocol:: {
+
+}
