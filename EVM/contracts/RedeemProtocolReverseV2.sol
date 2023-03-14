@@ -12,7 +12,7 @@ import "./libraries/RedeemProtocolType.sol";
 import "./interfaces/IERC20Permit.sol";
 import "./interfaces/IERC721Burnable.sol";
 import "./RedeemProtocolFactory.sol";
-import "./interfaces/IERC9999.sol";
+import "./interfaces/IERC6672.sol";
 
 // NOTE: probably don't use ERC2771Context since _trustedForwarder is immutable
 contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context, Pausable {
@@ -20,7 +20,7 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
     bytes32 public constant OPERATOR = keccak256("OPERATOR");
     bytes32 private constant DEFAULT_CUSTOM_ID = "DEFAULT_CUSTOM_ID";
 
-    bytes4 private constant erc9999Interface = 0x80ac58cd;
+    bytes4 private constant erc6672Interface = 0x4dddf83f;
 
     address public factory;
 
@@ -72,9 +72,9 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         if (_redemptionId[0] == 0) {
             _redemptionId = DEFAULT_CUSTOM_ID;
         }
-        require(IERC165(_contractAddr).supportsInterface(erc9999Interface), "not ERC721 token");
+        require(IERC165(_contractAddr).supportsInterface(erc6672Interface), "not ERC6672 token");
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Mark, "method is not mark");
-        require(IERC9999(_contractAddr).isRedeemed(this, _redemptionId, _tokenId), "token has been redeemed");
+        require(IERC6672(_contractAddr).isRedeemed(this, _redemptionId, _tokenId), "token has been redeemed");
         require(!IERC721(_contractAddr).ownerOf(_tokenId) == _msgSender(), "not token owner");
 
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
@@ -84,7 +84,7 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         require(ok, "fee payment failed");
         ok = IERC20(baseRedeemFee.token).transfer(RedeemProtocolFactory(factory).feeReceiver(), baseRedeemFee.amount);
         require(ok, "base redeem fee payment failed");
-        IERC9999(_contractAddr).redeem(_redemptionId, _tokenId, "Redeem With Mark");
+        IERC6672(_contractAddr).redeem(_redemptionId, _tokenId, "Redeem With Mark");
     }
 
     function redeemWithTransfer(
@@ -99,9 +99,9 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         if (_redemptionId[0] == 0) {
             _redemptionId = DEFAULT_CUSTOM_ID;
         }
-        require(IERC165(_contractAddr).supportsInterface(erc9999Interface), "not ERC721 token");
+        require(IERC165(_contractAddr).supportsInterface(erc6672Interface), "not ERC6672 token");
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Transfer, "method is not transfer");
-        require(!IERC9999(_contractAddr).isRedeemed(this, _redemptionId, _tokenId), "token has been redeemed");
+        require(!IERC6672(_contractAddr).isRedeemed(this, _redemptionId, _tokenId), "token has been redeemed");
 
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
             IERC20Permit(baseRedeemFee.token).permit(msg.sender, address(this), redeemAmount, _deadline, _v, _r, _s);
@@ -112,7 +112,7 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         require(ok, "base redeem fee payment failed");
 
         IERC721(_contractAddr).safeTransferFrom(_msgSender(), tokenReceiver, _tokenId);
-        IERC9999(_contractAddr).redeem(_redemptionId, _tokenId, "Redeem With Transfer");
+        IERC6672(_contractAddr).redeem(_redemptionId, _tokenId, "Redeem With Transfer");
     }
 
     function redeemWithBurn(
@@ -127,9 +127,9 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         if (_redemptionId[0] == 0) {
             _redemptionId = DEFAULT_CUSTOM_ID;
         }
-        require(IERC165(_contractAddr).supportsInterface(erc9999Interface), "not ERC721 token");
+        require(IERC165(_contractAddr).supportsInterface(erc6672Interface), "not ERC6672 token");
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Burn, "method is not burn");
-        require(!IERC9999(_contractAddr).isRedeemed(this, _redemptionId, _tokenId), "token has been redeemed");
+        require(!IERC6672(_contractAddr).isRedeemed(this, _redemptionId, _tokenId), "token has been redeemed");
 
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
             IERC20Permit(baseRedeemFee.token).permit(msg.sender, address(this), redeemAmount, _deadline, _v, _r, _s);
@@ -140,7 +140,7 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         require(ok, "base redeem fee payment failed");
 
         IERC721Burnable(_contractAddr).burn(_tokenId);
-        IERC9999(_contractAddr).redeem(_redemptionId, _tokenId, "Redeem With Burn");
+        IERC6672(_contractAddr).redeem(_redemptionId, _tokenId, "Redeem With Burn");
     }
 
     function updateReverse(
