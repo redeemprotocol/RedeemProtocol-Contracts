@@ -2,9 +2,9 @@
 pragma solidity 0.8.16;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "./interfaces/IERC9999.sol";
+import "./interfaces/IER6672.sol";
 
-contract ERC9999 is ERC721, IERC9999 {
+contract ERC6672 is ERC721, IERC6672 {
     mapping(address => mapping(uint256 => mapping(bytes32 => bool))) redemptionStatus;
     mapping(address => mapping(uint256 => mapping(bytes32 => string))) public memos;
     mapping(address => mapping(uint256 => bytes32[])) redemptions;
