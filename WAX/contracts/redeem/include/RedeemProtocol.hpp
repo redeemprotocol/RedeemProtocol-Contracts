@@ -10,57 +10,29 @@ CONTRACT redeemprotocol : public contract
 public:
     using contract::contract;
 
+    enum e_redeem_method {
+        mark = 0,
+        transfer,
+        burn,
+    };
+    typedef uint8_t redeem_method;
+
     ACTION init();
 
-    /* Redeemable NFT Standards for vIRL NFT. */
-
-    /// @brief 
-    /// @param asset_owner 
-    /// @param order_id 
-    /// @param asset_id 
-    /// @return 
     ACTION redeem(
-        name asset_owner,
-        string order_id,
-        uint64_t asset_id
-    );
-
-    /// @brief 
-    /// @param order_id 
-    /// @param asset_id 
-    /// @return 
-    ACTION cancel(
-        string order_id,
-        uint64_t asset_id
-    );
-
-    ACTION mark(
-        name asset_owner,
-        string order_id,
-        uint64_t asset_id
-    );
-
-    ACTION transfer(
-        name asset_owner,
-        string order_id,
-        uint64_t asset_id
-    );
-
-    ACTION burn(
-        name asset_owner,
-        string order_id,
-        uint64_t asset_id
+        name owner,
+        vector <uint64_t> asset_ids,
+        redeem_method method
     );
 
     ACTION settr(name new_token_receiver);
 
-    ACTION refund(uint64_t asset_id);
+    ACTION refund(vector <uint64_t> asset_ids);
 
     TABLE redemption_s
     {
         uint64_t asset_id;
-        string order_id;
-        string method;
+        redeem_method method;
         name requester;
 
         uint64_t primary_key() const { return asset_id; }
