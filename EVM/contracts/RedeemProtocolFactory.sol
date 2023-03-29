@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/utils/Create2.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import { RedeemProtocolType } from "./libraries/RedeemProtocolType.sol";
 import "./interfaces/IERC20Permit.sol";
-import "./RedeemProtocolReverse.sol";
+import "./RedeemProtocolRealm.sol";
 
 contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
     using Counters for Counters.Counter;
@@ -18,7 +18,7 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
     bytes32 public constant ROOT_CREATOR = keccak256("ROOT_CREATOR");
     bytes32 public constant REVERSE_CREATOR = keccak256("REVERSE_CREATOR");
 
-    Counters.Counter private reverseSalt;
+    Counters.Counter private realmSalt;
     bool public approveOnly = true;
     RedeemProtocolType.Fee public defaultSetupFee;
     RedeemProtocolType.Fee public defaultUpdateFee;
@@ -29,9 +29,9 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
     mapping(address => bool) public validRedeemToken;
     address public feeReceiver;
 
-    address[] public allReverses;
+    address[] public allRealms;
 
-    event ReverseCreated(address indexed creator, address reverse);
+    event RealmCreated(address indexed creator, address realm);
 
     constructor(
         RedeemProtocolType.Fee memory _defaultSetupFee,
@@ -54,7 +54,7 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
         feeReceiver = _feeReceiver;
     }
 
-    function createReverse(
+    function createRealm(
         RedeemProtocolType.RedeemMethod _method,
         uint256 _redeemAmount,
         address _tokenReceiver,
@@ -63,9 +63,9 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
         uint8 _v,
         bytes32 _r,
         bytes32 _s
-    ) external returns (address reverse) {
+    ) external returns (address realm) {
         if (approveOnly && !hasRole(ROOT_CREATOR, msg.sender)) {
-            require(hasRole(REVERSE_CREATOR, msg.sender), "not reverse operator");
+            require(hasRole(REVERSE_CREATOR, msg.sender), "not realm operator");
         }
         if (_method == RedeemProtocolType.RedeemMethod.Transfer) {
             require(_tokenReceiver != address(0), "tokenReceiver must be set");
@@ -80,13 +80,13 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
             updateFee.amount = designateUpdateFee[msg.sender].amount;
         }
         // bytecode must be encoded with abi.encodePacked
-        bytes memory bytecode = abi.encodePacked(type(RedeemProtocolReverse).creationCode, abi.encode(msg.sender, _forwarder, updateFee, baseRedeemFee));
-        bytes32 salt = keccak256(abi.encode(msg.sender, block.chainid, reverseSalt.current()));
-        reverseSalt.increment();
-        reverse = Create2.deploy(0, salt, bytecode);
+        bytes memory bytecode = abi.encodePacked(type(RedeemProtocolRealm).creationCode, abi.encode(msg.sender, _forwarder, updateFee, baseRedeemFee));
+        bytes32 salt = keccak256(abi.encode(msg.sender, block.chainid, realmSalt.current()));
+        realmSalt.increment();
+        realm = Create2.deploy(0, salt, bytecode);
         }
-        RedeemProtocolReverse(reverse).initialize(_method, _redeemAmount, _tokenReceiver);
-        allReverses.push(reverse);
+        RedeemProtocolRealm(realm).initialize(_method, _redeemAmount, _tokenReceiver);
+        allRealms.push(realm);
 
         // avoid stack too deep error
         {
@@ -102,7 +102,7 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
         bool ok = IERC20Permit(setupFee.token).transferFrom(msg.sender, feeReceiver, setupFee.amount);
         require(ok, "fee payment failed");
         }
-        emit ReverseCreated(msg.sender, reverse);
+        emit RealmCreated(msg.sender, realm);
     }
 
 
@@ -154,23 +154,23 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
         validRedeemToken[_token] = !validRedeemToken[_token];
     }
 
-    // reverse methods
-    // NOTE: can we just manipunate the reverse directly?
-    function setUpdateFee(address _reverse, uint256 _amount, address _token) external onlyRole(OPERATOR) {
-        RedeemProtocolReverse(_reverse).setUpdateFee(_amount, _token);
+    // realm methods
+    // NOTE: can we just manipunate the realm directly?
+    function setUpdateFee(address _realm, uint256 _amount, address _token) external onlyRole(OPERATOR) {
+        RedeemProtocolRealm(_realm).setUpdateFee(_amount, _token);
     }
 
-    function setBaseRedeemFee(address _reverse, uint256 _amount, address _token) external onlyRole(OPERATOR) {
-        RedeemProtocolReverse(_reverse).setBaseRedeemFee(_amount, _token);
+    function setBaseRedeemFee(address _realm, uint256 _amount, address _token) external onlyRole(OPERATOR) {
+        RedeemProtocolRealm(_realm).setBaseRedeemFee(_amount, _token);
     }
 
-    function setRedeemAmount(address _reverse, uint256 _amount) external onlyRole(OPERATOR) {
-        RedeemProtocolReverse(_reverse).setRedeemAmount(_amount);
+    function setRedeemAmount(address _realm, uint256 _amount) external onlyRole(OPERATOR) {
+        RedeemProtocolRealm(_realm).setRedeemAmount(_amount);
     }
 
     // admin methods
-    function pauseReverse(address _reverse) external onlyRole(ADMIN) {
-        RedeemProtocolReverse(_reverse).pause();
+    function pauseRealm(address _realm) external onlyRole(ADMIN) {
+        RedeemProtocolRealm(_realm).pause();
     }
 
     function withdraw(address _token, uint256 _amount, address _receiver) external nonReentrant onlyRole(ADMIN) {
