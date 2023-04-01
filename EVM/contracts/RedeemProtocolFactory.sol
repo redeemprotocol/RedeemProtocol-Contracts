@@ -16,7 +16,7 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
     bytes32 public constant ADMIN = keccak256("ADMIN");
     bytes32 public constant OPERATOR = keccak256("OPERATOR");
     bytes32 public constant ROOT_CREATOR = keccak256("ROOT_CREATOR");
-    bytes32 public constant REVERSE_CREATOR = keccak256("REVERSE_CREATOR");
+    bytes32 public constant REALM_CREATOR = keccak256("REALM_CREATOR");
 
     Counters.Counter private realmSalt;
     bool public approveOnly = true;
@@ -45,7 +45,7 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
         _setRoleAdmin(ADMIN, ADMIN);
         _setRoleAdmin(OPERATOR, ADMIN);
         _setRoleAdmin(ROOT_CREATOR, OPERATOR);
-        _setRoleAdmin(REVERSE_CREATOR, OPERATOR);
+        _setRoleAdmin(REALM_CREATOR, OPERATOR);
 
         defaultSetupFee = _defaultSetupFee;
         defaultUpdateFee = _defaultUpdateFee;
@@ -65,7 +65,7 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
         bytes32 _s
     ) external returns (address realm) {
         if (approveOnly && !hasRole(ROOT_CREATOR, msg.sender)) {
-            require(hasRole(REVERSE_CREATOR, msg.sender), "not realm operator");
+            require(hasRole(REALM_CREATOR, msg.sender), "not realm operator");
         }
         if (_method == RedeemProtocolType.RedeemMethod.Transfer) {
             require(_tokenReceiver != address(0), "tokenReceiver must be set");

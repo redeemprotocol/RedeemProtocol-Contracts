@@ -5,16 +5,12 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "./interfaces/IERC6672.sol";
 
-contract ERC6672 is ERC721, IERC6672 {
+abstract contract ERC6672 is ERC721, IERC6672 {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
-    bytes4 public constant IERC6672_ID = type(IERC6672).interfaceId;
-
-    mapping(address => mapping(uint256 => mapping(bytes32 => bool))) redemptionStatus;
+    mapping(address => mapping(uint256 => mapping(bytes32 => bool))) public redemptionStatus;
     mapping(address => mapping(uint256 => mapping(bytes32 => string))) public memos;
     mapping(address => mapping(uint256 => EnumerableSet.Bytes32Set)) redemptions;
-
-    constructor() ERC721("Multiple RedeemableNFT", "mrNFT") {}
 
     function isRedeemed(address _operator, bytes32 _redemptionId, uint256 _tokenId) external view returns (bool) {
         return _isRedeemed(_operator, _redemptionId, _tokenId);

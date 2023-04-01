@@ -15,7 +15,7 @@ import "./RedeemProtocolFactory.sol";
 import "./interfaces/IERC6672.sol";
 
 // NOTE: probably don't use ERC2771Context since _trustedForwarder is immutable
-contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context, Pausable {
+contract RedeemProtocolRealm is AccessControl, ReentrancyGuard, ERC2771Context, Pausable {
     bytes32 public constant ADMIN = keccak256("ADMIN");
     bytes32 public constant OPERATOR = keccak256("OPERATOR");
     bytes32 private constant DEFAULT_CUSTOM_ID = "DEFAULT_CUSTOM_ID";
@@ -38,15 +38,15 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
     );
 
     constructor(
-        address reverseOp,
+        address realmOp,
         address forwarder,
         RedeemProtocolType.Fee memory _updateFee,
         RedeemProtocolType.Fee memory _baseRedeemFee
     ) ERC2771Context(forwarder) {
         factory = msg.sender;
 
-        _grantRole(ADMIN, reverseOp);
-        _grantRole(OPERATOR, reverseOp);
+        _grantRole(ADMIN, realmOp);
+        _grantRole(OPERATOR, realmOp);
         _setRoleAdmin(ADMIN, ADMIN);
         _setRoleAdmin(OPERATOR, ADMIN);
 
@@ -143,7 +143,7 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         IERC6672(_contractAddr).redeem(_redemptionId, _tokenId, "Redeem With Burn");
     }
 
-    function updateReverse(
+    function updateRealm(
         RedeemProtocolType.RedeemMethod _method,
         uint256 _redeemAmount,
         address _tokenReceiver,
@@ -156,7 +156,7 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
             require(_tokenReceiver != address(0), "tokenReceiver must be set");
         }
         require(_redeemAmount >= baseRedeemFee.amount, "redeemAmount must be greater than baseRedeemFee");
-        _updateReverse(_method, _redeemAmount, _tokenReceiver);
+        _updateRealm(_method, _redeemAmount, _tokenReceiver);
 
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
             IERC20Permit(updateFee.token).permit(msg.sender, address(this), updateFee.amount, _deadline, _v, _r, _s);
@@ -166,7 +166,7 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         require(ok, "fee payment failed");
     }
 
-    function _updateReverse(
+    function _updateRealm(
         RedeemProtocolType.RedeemMethod _method,
         uint256 _redeemAmount,
         address _tokenReceiver
@@ -195,7 +195,7 @@ contract RedeemProtocolReverse is AccessControl, ReentrancyGuard, ERC2771Context
         address _tokenReceiver
     ) external onlyFactory whenNotPaused {
         require(_redeemAmount >= baseRedeemFee.amount, "redeemAmount must be greater than baseRedeemFee");
-        _updateReverse(_method, _redeemAmount, _tokenReceiver);
+        _updateRealm(_method, _redeemAmount, _tokenReceiver);
     }
 
     function pause() external onlyFactory {
