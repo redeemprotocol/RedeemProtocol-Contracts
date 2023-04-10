@@ -46,15 +46,15 @@ contract RedeemProtocolRealm is AccessControl, ReentrancyGuard, ERC2771Context, 
     );
 
     constructor(
-        address reverseOp,
+        address realmOp,
         address forwarder,
         RedeemProtocolType.Fee memory _updateFee,
         RedeemProtocolType.Fee memory _baseRedeemFee
     ) ERC2771Context(forwarder) {
         factory = msg.sender;
 
-        _grantRole(ADMIN, reverseOp);
-        _grantRole(OPERATOR, reverseOp);
+        _grantRole(ADMIN, realmOp);
+        _grantRole(OPERATOR, realmOp);
         _setRoleAdmin(ADMIN, ADMIN);
         _setRoleAdmin(OPERATOR, ADMIN);
 
@@ -78,7 +78,7 @@ contract RedeemProtocolRealm is AccessControl, ReentrancyGuard, ERC2771Context, 
         bytes32 _s
     ) external whenNotPaused {
         if (_customId[0] == 0) {
-            _customId = DEFAULT_CUSTOM_ID;
+        _customId = DEFAULT_CUSTOM_ID;
         }
         require(IERC165(_contractAddr).supportsInterface(erc721Interface), "not ERC721 token");
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Mark, "method is not mark");
