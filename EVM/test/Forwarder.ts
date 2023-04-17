@@ -230,7 +230,7 @@ describe("RedeemSystemForwarder", function () {
             gas: 210000,
             value: 0,
             data: data,
-            validUntilTime: Date.now() + 30000
+            validUntilTime: Math.round(Date.now()/1000 + 30000)
         };
         const signature = await endUser._signTypedData(
             domain,
@@ -250,5 +250,38 @@ describe("RedeemSystemForwarder", function () {
         expect(await feeToken.balanceOf(realm.address)).to.equal(realmRedeemFee.sub(redeemFee));
         expect(await feeToken.balanceOf(forwarder.address)).to.equal(0);
         expect(await feeToken.balanceOf(feeReceiver.address)).to.equal(redeemFee.add(setupFee));
+    });
+
+    it("Redeem with mark via Forwarder but should be expired", async () => {
+        const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
+            nft.address,
+            tokenId,
+            customId,
+            0,
+            0,
+            zeroBytes32,
+            zeroBytes32
+        ]);
+        const message = {
+            from: endUser.address,
+            to: realm.address,
+            nonce: Number(await forwarder.connect(clientOperator).getNonce(clientOperator.address)),
+            gas: 210000,
+            value: 0,
+            data: data,
+            validUntilTime: Math.round(Date.now()/1000 - 1000)
+        };
+        const signature = await endUser._signTypedData(
+            domain,
+            types,
+            message
+        );
+        await expect(forwarder.connect(clientOperator).execute(
+            message,
+            domainHash,
+            requestTypeHash,
+            suffixData,
+            signature
+        )).to.be.revertedWith('FWD: request expired');
     });
 })
