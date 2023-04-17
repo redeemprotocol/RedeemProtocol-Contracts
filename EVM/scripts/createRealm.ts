@@ -13,7 +13,7 @@ async function main() {
   const [ADMIN, ROOT_CREATOR, REDEEMER, PAYER] = await ethers.getSigners();
   const factory = await ethers.getContractFactory("RedeemProtocolFactory");
   const f = factory.attach(FACTORY_ADDR);
-  const reverse = await f.connect(ROOT_CREATOR).createReverse(
+  const reverse = await f.connect(ROOT_CREATOR).createRealm(
     METHOD, REDEEM_AMOUNT, TOKEN_RECEIVER, FORWARDER,
     0, 0, zeroBytes32, zeroBytes32,
   );

@@ -3,7 +3,7 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect } from "chai";
 import { BigNumberish } from "ethers";
 import { ethers, waffle } from "hardhat";
-import RedeemProtocolReverse from "../artifacts/contracts/RedeemProtocolReverse.sol/RedeemProtocolReverse.json";
+import RedeemProtocolRealm from "../artifacts/contracts/RedeemProtocolRealm.sol/RedeemProtocolRealm.json";
 import { RedeemProtocolFactory } from "../typechain-types";
 import { defaultAbiCoder } from "@ethersproject/abi";
 const { provider } = waffle;
@@ -72,7 +72,7 @@ describe("RedeemProtocolFactory", function() {
   }
 
   async function deployFactoryWithRole() {
-    const [admin, op, reverseOp, otherAccount, rootCreator, feeReceiver] = await ethers.getSigners();
+    const [admin, op, realmOp, otherAccount, rootCreator, feeReceiver] = await ethers.getSigners();
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20A = await erc20Factory.deploy();
     const erc20B = await erc20Factory.deploy();
@@ -96,14 +96,14 @@ describe("RedeemProtocolFactory", function() {
       feeReceiver.address,
     );
     await factory.grantRole(ethers.utils.id("OPERATOR"), op.address);
-    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), reverseOp.address);
+    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), realmOp.address);
     await factory.grantRole(ethers.utils.id("ROOT_CREATOR"), rootCreator.address);
 
-    return { factory, admin, op, reverseOp, otherAccount, rootCreator, erc20A, erc20B, erc721A, erc721B };
+    return { factory, admin, op, realmOp, otherAccount, rootCreator, erc20A, erc20B, erc721A, erc721B };
   }
 
   async function deployFactoryWithERC20Permit() {
-    const [admin, op, reverseOp, otherAccount, feeReceiver] = await ethers.getSigners();
+    const [admin, op, realmOp, otherAccount, feeReceiver] = await ethers.getSigners();
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20 = await erc20Factory.deploy();
     const erc721Factory = await ethers.getContractFactory("RPC721");
@@ -125,9 +125,9 @@ describe("RedeemProtocolFactory", function() {
       feeReceiver.address,
     );
     await factory.grantRole(ethers.utils.id("OPERATOR"), op.address);
-    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), reverseOp.address);
+    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), realmOp.address);
 
-    return { factory, admin, op, reverseOp, otherAccount, erc20, erc721 };
+    return { factory, admin, op, realmOp, otherAccount, erc20, erc721 };
   }
 
   describe("permission", function () {
@@ -211,8 +211,8 @@ describe("RedeemProtocolFactory", function() {
     });
   });
 
-  describe("createReverse", function () {
-    function getReverseInitCode(
+  describe("createRealm", function () {
+    function getRealmInitCode(
       address: string,
       forwarder: string,
       updateFee: any,
@@ -233,19 +233,19 @@ describe("RedeemProtocolFactory", function() {
           ]
         ]
       ).slice(2);
-      return ethers.utils.keccak256(`${RedeemProtocolReverse.bytecode}${encoded}`);
+      return ethers.utils.keccak256(`${RedeemProtocolRealm.bytecode}${encoded}`);
     }
 
-    async function createReverse(
+    async function createRealm(
       factory: RedeemProtocolFactory,
-      reverseOp: SignerWithAddress,
+      realmOp: SignerWithAddress,
       tokenReceiver: string,
       forwarder: string,
       erc20: RPC20,
       method: BigNumberish,
     ) {
-      const initCode = getReverseInitCode(
-        reverseOp.address,
+      const initCode = getRealmInitCode(
+        realmOp.address,
         forwarder,
         {
           amount: ethers.utils.parseEther("0.01"),
@@ -256,34 +256,34 @@ describe("RedeemProtocolFactory", function() {
           token: erc20.address
         }
       );
-      const salt = ethers.utils.defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [reverseOp.address, provider.network.chainId, 0]);
+      const salt = ethers.utils.defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
       const create2Address = ethers.utils.getCreate2Address(
         factory.address,
         ethers.utils.keccak256(salt),
         initCode,
       )
 
-      await expect(factory.connect(reverseOp).createReverse(
+      await expect(factory.connect(realmOp).createRealm(
         method, ethers.utils.parseEther("0.005"),
         tokenReceiver, forwarder, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.emit(factory, "ReverseCreated").withArgs(reverseOp.address, create2Address);
+      )).to.emit(factory, "RealmCreated").withArgs(realmOp.address, create2Address);
 
-      expect(await factory.allReverses(0)).to.equal(create2Address);
+      expect(await factory.allRealms(0)).to.equal(create2Address);
 
-      const reverse = await ethers.getContractAt('RedeemProtocolReverse', create2Address);
-      expect(await reverse.factory()).to.equal(factory.address);
-      expect(await reverse.hasRole(ethers.utils.id("ADMIN"), reverseOp.address)).to.be.true;
-      expect(await reverse.hasRole(ethers.utils.id("OPERATOR"), reverseOp.address)).to.be.true;
-      expect(await reverse.getRoleAdmin(ethers.utils.id("OPERATOR"))).to.equal(ethers.utils.id("ADMIN"));
-      expect(await reverse.redeemAmount()).to.equal(ethers.utils.parseEther("0.005"));
-      expect(await reverse.redeemMethod()).to.equal(method);
-      expect(await reverse.tokenReceiver()).to.equal(tokenReceiver);
+      const realm = await ethers.getContractAt('RedeemProtocolRealm', create2Address);
+      expect(await realm.factory()).to.equal(factory.address);
+      expect(await realm.hasRole(ethers.utils.id("ADMIN"), realmOp.address)).to.be.true;
+      expect(await realm.hasRole(ethers.utils.id("OPERATOR"), realmOp.address)).to.be.true;
+      expect(await realm.getRoleAdmin(ethers.utils.id("OPERATOR"))).to.equal(ethers.utils.id("ADMIN"));
+      expect(await realm.redeemAmount()).to.equal(ethers.utils.parseEther("0.005"));
+      expect(await realm.redeemMethod()).to.equal(method);
+      expect(await realm.tokenReceiver()).to.equal(tokenReceiver);
 
       // TODO: maybe we can shorten this test
-      const updateFee = await reverse.updateFee();
+      const updateFee = await realm.updateFee();
       expect(updateFee.amount).to.equal(ethers.utils.parseEther("0.01"));
       expect(updateFee.token).to.equal(erc20.address);
-      const baseRedeemFee = await reverse.baseRedeemFee();
+      const baseRedeemFee = await realm.baseRedeemFee();
       expect(baseRedeemFee.amount).to.equal(ethers.utils.parseEther("0.001"));
       expect(baseRedeemFee.token).to.equal(erc20.address);
       const feeReceiver = await factory.feeReceiver()
@@ -292,39 +292,39 @@ describe("RedeemProtocolFactory", function() {
 
     it("should create successfully with mark", async () => {
       // NOTE: must place await
-      const { factory, reverseOp, erc20A } = await loadFixture(deployFactoryWithRole);
-      await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
-      await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-      await createReverse(factory, reverseOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 0);
+      const { factory, realmOp, erc20A } = await loadFixture(deployFactoryWithRole);
+      await erc20A.mint(realmOp.address, ethers.utils.parseEther("0.1"));
+      await erc20A.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+      await createRealm(factory, realmOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 0);
     });
 
     it("should create successfully with transfer", async () => {
-      const { factory, reverseOp, otherAccount, erc20A } = await loadFixture(deployFactoryWithRole);
-      await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
-      await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+      const { factory, realmOp, otherAccount, erc20A } = await loadFixture(deployFactoryWithRole);
+      await erc20A.mint(realmOp.address, ethers.utils.parseEther("0.1"));
+      await erc20A.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
 
-      await createReverse(factory, reverseOp, otherAccount.address, ethers.constants.AddressZero, erc20A, 1);
+      await createRealm(factory, realmOp, otherAccount.address, ethers.constants.AddressZero, erc20A, 1);
     });
 
     it("should create successfully with burn", async () => {
-      const { factory, reverseOp, erc20A } = await loadFixture(deployFactoryWithRole);
-      await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
-      await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-      await createReverse(factory, reverseOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 2);
+      const { factory, realmOp, erc20A } = await loadFixture(deployFactoryWithRole);
+      await erc20A.mint(realmOp.address, ethers.utils.parseEther("0.1"));
+      await erc20A.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+      await createRealm(factory, realmOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 2);
     });
 
     it("should create successfully with ROOT_CREATOR and approved only", async function () {
       const { factory, rootCreator, erc20A } = await loadFixture(deployFactoryWithRole);
       await erc20A.mint(rootCreator.address, ethers.utils.parseEther("0.1"));
       await erc20A.connect(rootCreator).approve(factory.address, ethers.utils.parseEther("0.1"));
-      await createReverse(factory, rootCreator, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 0);
+      await createRealm(factory, rootCreator, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 0);
     });
 
     it("should create successfully with ROOT_CREATOR and not ERC721 owner", async function () {
       const { factory, rootCreator, otherAccount, erc20A } = await loadFixture(deployFactoryWithRole);
       await erc20A.mint(rootCreator.address, ethers.utils.parseEther("0.1"));
       await erc20A.connect(rootCreator).approve(factory.address, ethers.utils.parseEther("0.1"));
-      await createReverse(factory, rootCreator, otherAccount.address, ethers.constants.AddressZero, erc20A, 1);
+      await createRealm(factory, rootCreator, otherAccount.address, ethers.constants.AddressZero, erc20A, 1);
     });
 
     it("should create successfully with non REVERSE_CREATOR when not approved only", async function () {
@@ -332,33 +332,33 @@ describe("RedeemProtocolFactory", function() {
       await factory.flipApprovedOnly();
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("0.1"));
       await erc20A.connect(otherAccount).approve(factory.address, ethers.utils.parseEther("0.1"));
-      await createReverse(factory, otherAccount, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 0);
+      await createRealm(factory, otherAccount, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 0);
     });
 
-    it("should be reverted for non reverse operator", async function () {
+    it("should be reverted for non realm operator", async function () {
       const { factory, op } = await loadFixture(deployFactoryWithRole);
-      await expect(factory.connect(op).createReverse(
+      await expect(factory.connect(op).createRealm(
         0, ethers.utils.parseEther("0.1"),
         ethers.constants.AddressZero, ethers.constants.AddressZero, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.be.revertedWith("not reverse operator");
+      )).to.be.revertedWith("not realm operator");
     });
 
     it("should be reverted for transfer method and tokenReceiver is zero address", async function () {
-      const { factory, reverseOp } = await loadFixture(deployFactoryWithRole);
+      const { factory, realmOp } = await loadFixture(deployFactoryWithRole);
       const erc721Factory = await ethers.getContractFactory("RPC721");
-      const erc721 = await erc721Factory.connect(reverseOp).deploy();
-      await expect(factory.connect(reverseOp).createReverse(
+      const erc721 = await erc721Factory.connect(realmOp).deploy();
+      await expect(factory.connect(realmOp).createRealm(
         1, ethers.utils.parseEther("0.1"),
         ethers.constants.AddressZero, ethers.constants.AddressZero, 0, 0, zeroBytes32, zeroBytes32,
       )).to.be.revertedWith("tokenReceiver must be set");
     });
 
     it("should create successfully with designate setup fee", async function () {
-      const { factory, reverseOp, otherAccount, erc20A, erc20B } = await loadFixture(deployFactoryWithRole);
-      await factory.setDesignateSetupFee(reverseOp.address, ethers.utils.parseEther("1"), erc20B.address);
+      const { factory, realmOp, otherAccount, erc20A, erc20B } = await loadFixture(deployFactoryWithRole);
+      await factory.setDesignateSetupFee(realmOp.address, ethers.utils.parseEther("1"), erc20B.address);
 
-      const initCode = getReverseInitCode(
-        reverseOp.address,
+      const initCode = getRealmInitCode(
+        realmOp.address,
         ethers.constants.AddressZero,
         {
           amount: ethers.utils.parseEther("0.01"),
@@ -369,7 +369,7 @@ describe("RedeemProtocolFactory", function() {
           token: erc20A.address
         }
       );
-      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [reverseOp.address, provider.network.chainId, 0]);
+      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
       const create2Address = ethers.utils.getCreate2Address(
         factory.address,
         ethers.utils.keccak256(salt),
@@ -377,21 +377,21 @@ describe("RedeemProtocolFactory", function() {
       )
 
       const erc721Factory = await ethers.getContractFactory("RPC721");
-      const erc721 = await erc721Factory.connect(reverseOp).deploy();
-      await erc20B.mint(reverseOp.address, ethers.utils.parseEther("1"));
-      await erc20B.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("1"));
-      await expect(factory.connect(reverseOp).createReverse(
+      const erc721 = await erc721Factory.connect(realmOp).deploy();
+      await erc20B.mint(realmOp.address, ethers.utils.parseEther("1"));
+      await erc20B.connect(realmOp).approve(factory.address, ethers.utils.parseEther("1"));
+      await expect(factory.connect(realmOp).createRealm(
         1, ethers.utils.parseEther("0.005"),
         otherAccount.address, ethers.constants.AddressZero, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.emit(factory, "ReverseCreated").withArgs(reverseOp.address, create2Address);
+      )).to.emit(factory, "RealmCreated").withArgs(realmOp.address, create2Address);
     });
 
     it("should create sucessfully with designate update fee", async function () {
-      const { factory, reverseOp, otherAccount, erc20A, erc20B } = await loadFixture(deployFactoryWithRole);
-      await factory.setDesignateUpdateFee(reverseOp.address, ethers.utils.parseEther("1"), erc20B.address);
+      const { factory, realmOp, otherAccount, erc20A, erc20B } = await loadFixture(deployFactoryWithRole);
+      await factory.setDesignateUpdateFee(realmOp.address, ethers.utils.parseEther("1"), erc20B.address);
 
-      const initCode = getReverseInitCode(
-        reverseOp.address,
+      const initCode = getRealmInitCode(
+        realmOp.address,
         ethers.constants.AddressZero,
         {
           amount: ethers.utils.parseEther("1"),
@@ -402,7 +402,7 @@ describe("RedeemProtocolFactory", function() {
           token: erc20A.address
         }
       );
-      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [reverseOp.address, provider.network.chainId, 0]);
+      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
       const create2Address = ethers.utils.getCreate2Address(
         factory.address,
         ethers.utils.keccak256(salt),
@@ -410,27 +410,27 @@ describe("RedeemProtocolFactory", function() {
       )
 
       const erc721Factory = await ethers.getContractFactory("RPC721");
-      const erc721 = await erc721Factory.connect(reverseOp).deploy();
-      await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
-      await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-      await expect(factory.connect(reverseOp).createReverse(
+      const erc721 = await erc721Factory.connect(realmOp).deploy();
+      await erc20A.mint(realmOp.address, ethers.utils.parseEther("0.1"));
+      await erc20A.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+      await expect(factory.connect(realmOp).createRealm(
         1, ethers.utils.parseEther("0.005"),
         otherAccount.address, ethers.constants.AddressZero, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.emit(factory, "ReverseCreated").withArgs(reverseOp.address, create2Address);
+      )).to.emit(factory, "RealmCreated").withArgs(realmOp.address, create2Address);
 
-      const reverse = await ethers.getContractAt('RedeemProtocolReverse', create2Address);
-      const updateFee = await reverse.updateFee();
+      const realm = await ethers.getContractAt('RedeemProtocolRealm', create2Address);
+      const updateFee = await realm.updateFee();
       expect(updateFee.amount).to.equal(ethers.utils.parseEther("1"));
       expect(updateFee.token).to.equal(erc20B.address);
     });
 
     it("should create sucessfully with designate base redeem fee", async function () {
-      const { factory, reverseOp, otherAccount, erc20A, erc20B } = await loadFixture(deployFactoryWithRole);
+      const { factory, realmOp, otherAccount, erc20A, erc20B } = await loadFixture(deployFactoryWithRole);
       await factory.flipValidRedeemToken(erc20B.address);
-      await factory.setDesignateBaseRedeemFee(reverseOp.address, ethers.utils.parseEther("1"), erc20B.address);
+      await factory.setDesignateBaseRedeemFee(realmOp.address, ethers.utils.parseEther("1"), erc20B.address);
 
-      const initCode = getReverseInitCode(
-        reverseOp.address,
+      const initCode = getRealmInitCode(
+        realmOp.address,
         ethers.constants.AddressZero,
         {
           amount: ethers.utils.parseEther("0.01"),
@@ -441,7 +441,7 @@ describe("RedeemProtocolFactory", function() {
           token: erc20B.address
         }
       );
-      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [reverseOp.address, provider.network.chainId, 0]);
+      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
       const create2Address = ethers.utils.getCreate2Address(
         factory.address,
         ethers.utils.keccak256(salt),
@@ -449,24 +449,24 @@ describe("RedeemProtocolFactory", function() {
       )
 
       const erc721Factory = await ethers.getContractFactory("RPC721");
-      await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
-      await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-      await expect(factory.connect(reverseOp).createReverse(
+      await erc20A.mint(realmOp.address, ethers.utils.parseEther("0.1"));
+      await erc20A.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+      await expect(factory.connect(realmOp).createRealm(
         1, ethers.utils.parseEther("1.1"),
         otherAccount.address, ethers.constants.AddressZero, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.emit(factory, "ReverseCreated").withArgs(reverseOp.address, create2Address);
+      )).to.emit(factory, "RealmCreated").withArgs(realmOp.address, create2Address);
 
-      const reverse = await ethers.getContractAt('RedeemProtocolReverse', create2Address);
-      const baseRedeemFee = await reverse.baseRedeemFee();
+      const realm = await ethers.getContractAt('RedeemProtocolRealm', create2Address);
+      const baseRedeemFee = await realm.baseRedeemFee();
       expect(baseRedeemFee.amount).to.equal(ethers.utils.parseEther("1"));
       expect(baseRedeemFee.token).to.equal(erc20B.address);
     });
 
     it("should create sucessfully with permit", async function () {
-      const { factory, reverseOp, otherAccount, erc20A } = await loadFixture(deployFactoryWithRole);
+      const { factory, realmOp, otherAccount, erc20A } = await loadFixture(deployFactoryWithRole);
 
-      const initCode = getReverseInitCode(
-        reverseOp.address,
+      const initCode = getRealmInitCode(
+        realmOp.address,
         ethers.constants.AddressZero,
         {
           amount: ethers.utils.parseEther("0.01"),
@@ -477,7 +477,7 @@ describe("RedeemProtocolFactory", function() {
           token: erc20A.address
         }
       );
-      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [reverseOp.address, provider.network.chainId, 0]);
+      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
       const create2Address = ethers.utils.getCreate2Address(
         factory.address,
         ethers.utils.keccak256(salt),
@@ -486,18 +486,18 @@ describe("RedeemProtocolFactory", function() {
 
       const deadline = Date.now() + 60;
       const permitData = getPermitData(
-        reverseOp.address, factory.address, ethers.utils.parseEther("0.1"), 0, deadline, erc20A.address, "RPC20",
+        realmOp.address, factory.address, ethers.utils.parseEther("0.1"), 0, deadline, erc20A.address, "RPC20",
       );
-      const permit = await reverseOp._signTypedData(permitData.domain, permitData.types, permitData.message);
+      const permit = await realmOp._signTypedData(permitData.domain, permitData.types, permitData.message);
       const sig = ethers.utils.splitSignature(permit);
       const erc721Factory = await ethers.getContractFactory("RPC721");
-      const erc721 = await erc721Factory.connect(reverseOp).deploy();
-      await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
-      await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-      await expect(factory.connect(reverseOp).createReverse(
+      const erc721 = await erc721Factory.connect(realmOp).deploy();
+      await erc20A.mint(realmOp.address, ethers.utils.parseEther("0.1"));
+      await erc20A.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+      await expect(factory.connect(realmOp).createRealm(
         1, ethers.utils.parseEther("0.005"),
         otherAccount.address, ethers.constants.AddressZero, deadline, sig.v, sig.r, sig.s,
-      )).to.emit(factory, "ReverseCreated").withArgs(reverseOp.address, create2Address);
+      )).to.emit(factory, "RealmCreated").withArgs(realmOp.address, create2Address);
     });
   });
 
@@ -662,16 +662,16 @@ describe("RedeemProtocolFactory", function() {
     });
   });
 
-  describe("set reverse config", function () {
-    async function createReverse(
+  describe("set realm config", function () {
+    async function createRealm(
       factory: RedeemProtocolFactory,
-      reverseOp: SignerWithAddress,
+      realmOp: SignerWithAddress,
       erc20: RPC20,
     ) {
       const encoded = ethers.utils.defaultAbiCoder.encode(
         ['address', 'address', 'tuple(uint256,address)', 'tuple(uint256,address)'],
         [
-          reverseOp.address,
+          realmOp.address,
           ethers.constants.AddressZero,
           [
             ethers.utils.parseEther("0.01"),
@@ -683,37 +683,37 @@ describe("RedeemProtocolFactory", function() {
           ]
         ]
       ).slice(2);
-      const initCode = ethers.utils.keccak256(`${RedeemProtocolReverse.bytecode}${encoded}`);
-      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [reverseOp.address, provider.network.chainId, 0]);
+      const initCode = ethers.utils.keccak256(`${RedeemProtocolRealm.bytecode}${encoded}`);
+      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
       const create2Address = ethers.utils.getCreate2Address(
         factory.address,
         ethers.utils.keccak256(salt),
         initCode,
       )
 
-      await erc20.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
-      await erc20.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-      await expect(factory.connect(reverseOp).createReverse(
+      await erc20.mint(realmOp.address, ethers.utils.parseEther("0.1"));
+      await erc20.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+      await expect(factory.connect(realmOp).createRealm(
         0, ethers.utils.parseEther("0.005"),
         ethers.constants.AddressZero, ethers.constants.AddressZero, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.emit(factory, "ReverseCreated").withArgs(reverseOp.address, create2Address);
+      )).to.emit(factory, "RealmCreated").withArgs(realmOp.address, create2Address);
 
-      expect(await factory.allReverses(0)).to.equal(create2Address);
+      expect(await factory.allRealms(0)).to.equal(create2Address);
 
-      const reverse = await ethers.getContractAt('RedeemProtocolReverse', create2Address);
-      expect(await reverse.factory()).to.equal(factory.address);
-      expect(await reverse.hasRole(ethers.utils.id("ADMIN"), reverseOp.address)).to.be.true;
-      expect(await reverse.hasRole(ethers.utils.id("OPERATOR"), reverseOp.address)).to.be.true;
-      expect(await reverse.getRoleAdmin(ethers.utils.id("OPERATOR"))).to.equal(ethers.utils.id("ADMIN"));
-      expect(await reverse.redeemAmount()).to.equal(ethers.utils.parseEther("0.005"));
-      expect(await reverse.redeemMethod()).to.equal(0);
-      expect(await reverse.tokenReceiver()).to.equal(ethers.constants.AddressZero);
+      const realm = await ethers.getContractAt('RedeemProtocolRealm', create2Address);
+      expect(await realm.factory()).to.equal(factory.address);
+      expect(await realm.hasRole(ethers.utils.id("ADMIN"), realmOp.address)).to.be.true;
+      expect(await realm.hasRole(ethers.utils.id("OPERATOR"), realmOp.address)).to.be.true;
+      expect(await realm.getRoleAdmin(ethers.utils.id("OPERATOR"))).to.equal(ethers.utils.id("ADMIN"));
+      expect(await realm.redeemAmount()).to.equal(ethers.utils.parseEther("0.005"));
+      expect(await realm.redeemMethod()).to.equal(0);
+      expect(await realm.tokenReceiver()).to.equal(ethers.constants.AddressZero);
 
       // TODO: maybe we can shorten this test
-      const updateFee = await reverse.updateFee();
+      const updateFee = await realm.updateFee();
       expect(updateFee.amount).to.equal(ethers.utils.parseEther("0.01"));
       expect(updateFee.token).to.equal(erc20.address);
-      const baseRedeemFee = await reverse.baseRedeemFee();
+      const baseRedeemFee = await realm.baseRedeemFee();
       expect(baseRedeemFee.amount).to.equal(ethers.utils.parseEther("0.001"));
       expect(baseRedeemFee.token).to.equal(erc20.address);
 
@@ -721,79 +721,79 @@ describe("RedeemProtocolFactory", function() {
     };
 
     it("setUpdateFee success", async function () {
-      const { factory, op, reverseOp, erc20A, erc20B, erc721A } = await loadFixture(deployFactoryWithRole);
-      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
-      await factory.connect(op).setUpdateFee(reverseAddr, ethers.utils.parseEther("1"), erc20B.address);
+      const { factory, op, realmOp, erc20A, erc20B, erc721A } = await loadFixture(deployFactoryWithRole);
+      const realmAddr = await createRealm(factory, realmOp, erc20A);
+      await factory.connect(op).setUpdateFee(realmAddr, ethers.utils.parseEther("1"), erc20B.address);
 
-      const reverse = await ethers.getContractAt('RedeemProtocolReverse', reverseAddr);
-      const updateFee = await reverse.updateFee();
+      const realm = await ethers.getContractAt('RedeemProtocolRealm', realmAddr);
+      const updateFee = await realm.updateFee();
       expect(updateFee.amount).to.equal(ethers.utils.parseEther("1"));
       expect(updateFee.token).to.equal(erc20B.address);
     });
 
     it("setUpdateFee reverted when not OPERATOR role", async function () {
-      const { factory, otherAccount, reverseOp, erc20A, erc20B, erc721A } = await loadFixture(deployFactoryWithRole);
-      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
+      const { factory, otherAccount, realmOp, erc20A, erc20B, erc721A } = await loadFixture(deployFactoryWithRole);
+      const realmAddr = await createRealm(factory, realmOp, erc20A);
       await expect(factory.connect(otherAccount)
-        .setUpdateFee(reverseAddr, ethers.utils.parseEther("1"), erc20B.address))
+        .setUpdateFee(realmAddr, ethers.utils.parseEther("1"), erc20B.address))
         .to.be.revertedWith("AccessControl: account 0x90f79bf6eb2c4f870365e785982e1f101e93b906 is missing role 0x523a704056dcd17bcf83bed8b68c59416dac1119be77755efe3bde0a64e46e0c");
     });
 
     it("setBaseRedeemFee success", async function () {
-      const { factory, op, reverseOp, erc20A, erc20B, erc721A } = await loadFixture(deployFactoryWithRole);
-      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
-      await factory.connect(op).setBaseRedeemFee(reverseAddr, ethers.utils.parseEther("1"), erc20B.address);
+      const { factory, op, realmOp, erc20A, erc20B, erc721A } = await loadFixture(deployFactoryWithRole);
+      const realmAddr = await createRealm(factory, realmOp, erc20A);
+      await factory.connect(op).setBaseRedeemFee(realmAddr, ethers.utils.parseEther("1"), erc20B.address);
 
-      const reverse = await ethers.getContractAt('RedeemProtocolReverse', reverseAddr);
-      const baseRedeemFee = await reverse.baseRedeemFee();
+      const realm = await ethers.getContractAt('RedeemProtocolRealm', realmAddr);
+      const baseRedeemFee = await realm.baseRedeemFee();
       expect(baseRedeemFee.amount).to.equal(ethers.utils.parseEther("1"));
       expect(baseRedeemFee.token).to.equal(erc20B.address);
-      expect(await reverse.redeemAmount()).to.equal(ethers.utils.parseEther("1"));
+      expect(await realm.redeemAmount()).to.equal(ethers.utils.parseEther("1"));
     });
 
     it("setBaseRedeemFee reverted when not OPERATOR role", async function () {
-      const { factory, otherAccount, reverseOp, erc20A, erc20B } = await loadFixture(deployFactoryWithRole);
-      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
+      const { factory, otherAccount, realmOp, erc20A, erc20B } = await loadFixture(deployFactoryWithRole);
+      const realmAddr = await createRealm(factory, realmOp, erc20A);
       await expect(factory.connect(otherAccount)
-        .setBaseRedeemFee(reverseAddr, ethers.utils.parseEther("1"), erc20B.address))
+        .setBaseRedeemFee(realmAddr, ethers.utils.parseEther("1"), erc20B.address))
         .to.be.revertedWith("AccessControl: account 0x90f79bf6eb2c4f870365e785982e1f101e93b906 is missing role 0x523a704056dcd17bcf83bed8b68c59416dac1119be77755efe3bde0a64e46e0c");
     });
 
     it("setRedeemAmount success", async function () {
-      const { factory, op, reverseOp, erc20A } = await loadFixture(deployFactoryWithRole);
-      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
-      await factory.connect(op).setRedeemAmount(reverseAddr, ethers.utils.parseEther("1"));
+      const { factory, op, realmOp, erc20A } = await loadFixture(deployFactoryWithRole);
+      const realmAddr = await createRealm(factory, realmOp, erc20A);
+      await factory.connect(op).setRedeemAmount(realmAddr, ethers.utils.parseEther("1"));
 
-      const reverse = await ethers.getContractAt('RedeemProtocolReverse', reverseAddr);
-      expect(await reverse.redeemAmount()).to.equal(ethers.utils.parseEther("1"));
+      const realm = await ethers.getContractAt('RedeemProtocolRealm', realmAddr);
+      expect(await realm.redeemAmount()).to.equal(ethers.utils.parseEther("1"));
     });
 
     it("setRedeemAmount reverted when not OPERATOR role", async function () {
-      const { factory, otherAccount, reverseOp, erc20A } = await loadFixture(deployFactoryWithRole);
-      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
+      const { factory, otherAccount, realmOp, erc20A } = await loadFixture(deployFactoryWithRole);
+      const realmAddr = await createRealm(factory, realmOp, erc20A);
       await expect(factory.connect(otherAccount)
-        .setRedeemAmount(reverseAddr, ethers.utils.parseEther("1")))
+        .setRedeemAmount(realmAddr, ethers.utils.parseEther("1")))
         .to.be.revertedWith("AccessControl: account 0x90f79bf6eb2c4f870365e785982e1f101e93b906 is missing role 0x523a704056dcd17bcf83bed8b68c59416dac1119be77755efe3bde0a64e46e0c");
     });
 
     it("setRedeemAmount reverted when redeemAmount less than baseRedeemFee", async function () {
-      const { factory, op, reverseOp, erc20A } = await loadFixture(deployFactoryWithRole);
-      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
-      await expect(factory.connect(op).setRedeemAmount(reverseAddr, ethers.utils.parseEther("0.0009")))
+      const { factory, op, realmOp, erc20A } = await loadFixture(deployFactoryWithRole);
+      const realmAddr = await createRealm(factory, realmOp, erc20A);
+      await expect(factory.connect(op).setRedeemAmount(realmAddr, ethers.utils.parseEther("0.0009")))
         .to.be.revertedWith("redeemAmount must be greater than baseRedeemFee");
     });
   });
 
   describe("admin methods", function () {
-    async function createReverse(
+    async function createRealm(
       factory: RedeemProtocolFactory,
-      reverseOp: SignerWithAddress,
+      realmOp: SignerWithAddress,
       erc20: RPC20,
     ) {
       const encoded = ethers.utils.defaultAbiCoder.encode(
         ['address', 'address', 'tuple(uint256,address)', 'tuple(uint256,address)'],
         [
-          reverseOp.address,
+          realmOp.address,
           ethers.constants.AddressZero,
           [
             ethers.utils.parseEther("0.01"),
@@ -805,56 +805,56 @@ describe("RedeemProtocolFactory", function() {
           ]
         ]
       ).slice(2);
-      const initCode = ethers.utils.keccak256(`${RedeemProtocolReverse.bytecode}${encoded}`);
-      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [reverseOp.address, provider.network.chainId, 0]);
+      const initCode = ethers.utils.keccak256(`${RedeemProtocolRealm.bytecode}${encoded}`);
+      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
       const create2Address = ethers.utils.getCreate2Address(
         factory.address,
         ethers.utils.keccak256(salt),
         initCode,
       )
 
-      await erc20.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
-      await erc20.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-      await expect(factory.connect(reverseOp).createReverse(
+      await erc20.mint(realmOp.address, ethers.utils.parseEther("0.1"));
+      await erc20.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+      await expect(factory.connect(realmOp).createRealm(
         0, ethers.utils.parseEther("0.005"),
         ethers.constants.AddressZero, ethers.constants.AddressZero, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.emit(factory, "ReverseCreated").withArgs(reverseOp.address, create2Address);
+      )).to.emit(factory, "RealmCreated").withArgs(realmOp.address, create2Address);
 
-      expect(await factory.allReverses(0)).to.equal(create2Address);
+      expect(await factory.allRealms(0)).to.equal(create2Address);
 
-      const reverse = await ethers.getContractAt('RedeemProtocolReverse', create2Address);
-      expect(await reverse.factory()).to.equal(factory.address);
-      expect(await reverse.hasRole(ethers.utils.id("ADMIN"), reverseOp.address)).to.be.true;
-      expect(await reverse.hasRole(ethers.utils.id("OPERATOR"), reverseOp.address)).to.be.true;
-      expect(await reverse.getRoleAdmin(ethers.utils.id("OPERATOR"))).to.equal(ethers.utils.id("ADMIN"));
-      expect(await reverse.redeemAmount()).to.equal(ethers.utils.parseEther("0.005"));
-      expect(await reverse.redeemMethod()).to.equal(0);
-      expect(await reverse.tokenReceiver()).to.equal(ethers.constants.AddressZero);
+      const realm = await ethers.getContractAt('RedeemProtocolRealm', create2Address);
+      expect(await realm.factory()).to.equal(factory.address);
+      expect(await realm.hasRole(ethers.utils.id("ADMIN"), realmOp.address)).to.be.true;
+      expect(await realm.hasRole(ethers.utils.id("OPERATOR"), realmOp.address)).to.be.true;
+      expect(await realm.getRoleAdmin(ethers.utils.id("OPERATOR"))).to.equal(ethers.utils.id("ADMIN"));
+      expect(await realm.redeemAmount()).to.equal(ethers.utils.parseEther("0.005"));
+      expect(await realm.redeemMethod()).to.equal(0);
+      expect(await realm.tokenReceiver()).to.equal(ethers.constants.AddressZero);
 
       // TODO: maybe we can shorten this test
-      const updateFee = await reverse.updateFee();
+      const updateFee = await realm.updateFee();
       expect(updateFee.amount).to.equal(ethers.utils.parseEther("0.01"));
       expect(updateFee.token).to.equal(erc20.address);
-      const baseRedeemFee = await reverse.baseRedeemFee();
+      const baseRedeemFee = await realm.baseRedeemFee();
       expect(baseRedeemFee.amount).to.equal(ethers.utils.parseEther("0.001"));
       expect(baseRedeemFee.token).to.equal(erc20.address);
 
       return create2Address;
     };
 
-    it("pauseReverse should success", async function () {
-      const { factory, reverseOp, erc20A } = await loadFixture(deployFactoryWithRole);
-      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
-      await factory.pauseReverse(reverseAddr);
+    it("pauseRealm should success", async function () {
+      const { factory, realmOp, erc20A } = await loadFixture(deployFactoryWithRole);
+      const realmAddr = await createRealm(factory, realmOp, erc20A);
+      await factory.pauseRealm(realmAddr);
 
-      const reverse = await ethers.getContractAt('RedeemProtocolReverse', reverseAddr);
-      expect(await reverse.paused()).to.be.true;
+      const realm = await ethers.getContractAt('RedeemProtocolRealm', realmAddr);
+      expect(await realm.paused()).to.be.true;
     });
 
-    it("pauseReverse should be reverted when not ADMIN role", async function () {
-      const { factory, reverseOp, otherAccount, erc20A } = await loadFixture(deployFactoryWithRole);
-      const reverseAddr = await createReverse(factory, reverseOp, erc20A);
-      await expect(factory.connect(otherAccount).pauseReverse(reverseAddr))
+    it("pauseRealm should be reverted when not ADMIN role", async function () {
+      const { factory, realmOp, otherAccount, erc20A } = await loadFixture(deployFactoryWithRole);
+      const realmAddr = await createRealm(factory, realmOp, erc20A);
+      await expect(factory.connect(otherAccount).pauseRealm(realmAddr))
         .to.be.revertedWith("AccessControl: account 0x90f79bf6eb2c4f870365e785982e1f101e93b906 is missing role 0xdf8b4c520ffe197c5343c6f5aec59570151ef9a492f2c624fd45ddde6135ec42");
     });
 

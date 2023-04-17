@@ -15,7 +15,7 @@ import "./RedeemProtocolFactory.sol";
 import "./interfaces/IERC6672.sol";
 
 // NOTE: probably don't use ERC2771Context since _trustedForwarder is immutable
-contract RedeemProtocolRealm is AccessControl, ReentrancyGuard, ERC2771Context, Pausable {
+contract RedeemProtocolRealmV2 is AccessControl, ReentrancyGuard, ERC2771Context, Pausable {
     bytes32 public constant ADMIN = keccak256("ADMIN");
     bytes32 public constant OPERATOR = keccak256("OPERATOR");
     bytes32 private constant DEFAULT_CUSTOM_ID = "DEFAULT_CUSTOM_ID";
@@ -74,8 +74,8 @@ contract RedeemProtocolRealm is AccessControl, ReentrancyGuard, ERC2771Context, 
         }
         require(IERC165(_contractAddr).supportsInterface(erc6672Interface), "not ERC6672 token");
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Mark, "method is not mark");
-        require(IERC6672(_contractAddr).isRedeemed(this, _redemptionId, _tokenId), "token has been redeemed");
-        require(!IERC721(_contractAddr).ownerOf(_tokenId) == _msgSender(), "not token owner");
+        require(IERC6672(_contractAddr).isRedeemed(address(this), _redemptionId, _tokenId), "token has been redeemed");
+        require(IERC721(_contractAddr).ownerOf(_tokenId) == _msgSender(), "not token owner");
 
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
             IERC20Permit(baseRedeemFee.token).permit(msg.sender, address(this), redeemAmount, _deadline, _v, _r, _s);
@@ -101,7 +101,7 @@ contract RedeemProtocolRealm is AccessControl, ReentrancyGuard, ERC2771Context, 
         }
         require(IERC165(_contractAddr).supportsInterface(erc6672Interface), "not ERC6672 token");
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Transfer, "method is not transfer");
-        require(!IERC6672(_contractAddr).isRedeemed(this, _redemptionId, _tokenId), "token has been redeemed");
+        require(!IERC6672(_contractAddr).isRedeemed(address(this), _redemptionId, _tokenId), "token has been redeemed");
 
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
             IERC20Permit(baseRedeemFee.token).permit(msg.sender, address(this), redeemAmount, _deadline, _v, _r, _s);
@@ -129,7 +129,7 @@ contract RedeemProtocolRealm is AccessControl, ReentrancyGuard, ERC2771Context, 
         }
         require(IERC165(_contractAddr).supportsInterface(erc6672Interface), "not ERC6672 token");
         require(redeemMethod == RedeemProtocolType.RedeemMethod.Burn, "method is not burn");
-        require(!IERC6672(_contractAddr).isRedeemed(this, _redemptionId, _tokenId), "token has been redeemed");
+        require(!IERC6672(_contractAddr).isRedeemed(address(this), _redemptionId, _tokenId), "token has been redeemed");
 
         if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
             IERC20Permit(baseRedeemFee.token).permit(msg.sender, address(this), redeemAmount, _deadline, _v, _r, _s);

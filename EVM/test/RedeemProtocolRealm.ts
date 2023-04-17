@@ -3,15 +3,15 @@ import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { ethers, waffle, network } from "hardhat";
 import { defaultAbiCoder } from "@ethersproject/abi";
 const { provider } = waffle;
-import { RedeemProtocolFactory, RedeemProtocolReverse } from "../typechain-types";
-import * as RPRByte from "../artifacts/contracts/RedeemProtocolReverse.sol/RedeemProtocolReverse.json";
+import { RedeemProtocolFactory, RedeemProtocolRealm } from "../typechain-types";
+import * as RPRByte from "../artifacts/contracts/RedeemProtocolRealm.sol/RedeemProtocolRealm.json";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { BigNumberish, Contract } from "ethers";
 import { _TypedDataEncoder } from "ethers/lib/utils";
 import { RPC20 } from "../typechain-types/contracts/test";
 import { erc20 } from "../typechain-types/@openzeppelin/contracts/token";
 
-describe("RedeemProtocolReverse", function () {
+describe("RedeemProtocolRealm", function () {
   const zeroBytes32 = ethers.utils.defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('')]);
   function getPermitData(
     owner: string,
@@ -82,7 +82,7 @@ describe("RedeemProtocolReverse", function () {
     };
   };
 
-  function getReverseInitCode(
+  function getRealmInitCode(
     address: string,
     forwarder: string,
     updateFee: any,
@@ -106,9 +106,9 @@ describe("RedeemProtocolReverse", function () {
     return ethers.utils.keccak256(`${RPRByte.bytecode}${encoded}`);
   };
 
-  async function createReverse(
+  async function createRealm(
     factory: RedeemProtocolFactory,
-    reverseOp: SignerWithAddress,
+    realmOp: SignerWithAddress,
     tokenReceiver: string,
     forwarder: string,
     erc20: RPC20,
@@ -117,8 +117,8 @@ describe("RedeemProtocolReverse", function () {
     updateFee: string,
     baseRedeemFee: string,
   ) {
-    const initCode = getReverseInitCode(
-      reverseOp.address,
+    const initCode = getRealmInitCode(
+      realmOp.address,
       forwarder,
       {
         amount: ethers.utils.parseEther(updateFee),
@@ -129,23 +129,23 @@ describe("RedeemProtocolReverse", function () {
         token: erc20.address
       }
     );
-    const salt = ethers.utils.defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [reverseOp.address, provider.network.chainId, 0]);
+    const salt = ethers.utils.defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
     const create2Address = ethers.utils.getCreate2Address(
       factory.address,
       ethers.utils.keccak256(salt),
       initCode,
     );
 
-    await factory.connect(reverseOp).createReverse(
+    await factory.connect(realmOp).createRealm(
       method, ethers.utils.parseEther(redeemAmount),
       tokenReceiver, forwarder, 0, 0, zeroBytes32, zeroBytes32,
     );
     
-    return await ethers.getContractAt("RedeemProtocolReverse", create2Address);
+    return await ethers.getContractAt("RedeemProtocolRealm", create2Address);
   };
   
-  async function deployReverse() {
-    const [deployer, reverseOp, otherAccount, feeReceiver] = await ethers.getSigners();
+  async function deployRealm() {
+    const [deployer, realmOp, otherAccount, feeReceiver] = await ethers.getSigners();
 
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20A = await erc20Factory.deploy();
@@ -169,26 +169,26 @@ describe("RedeemProtocolReverse", function () {
       },
       feeReceiver.address,
     );
-    await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
-    await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), reverseOp.address);
-    const reverse = await createReverse(
-      factory, reverseOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 0, "0.005", "0.01", "0.001",
+    await erc20A.mint(realmOp.address, ethers.utils.parseEther("0.1"));
+    await erc20A.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), realmOp.address);
+    const realm = await createRealm(
+      factory, realmOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 0, "0.005", "0.01", "0.001",
     );
 
-    return { deployer, factory, reverse, reverseOp, otherAccount, feeReceiver, erc20A, erc20B, erc721A, erc721B };
+    return { deployer, factory, realm, realmOp, otherAccount, feeReceiver, erc20A, erc20B, erc721A, erc721B };
   };
 
-  async function deployReverseBaseRedeemFeeMark() {
-    const [deployer, reverseOp, otherAccount] = await ethers.getSigners();
+  async function deployRealmBaseRedeemFeeMark() {
+    const [deployer, realmOp, otherAccount] = await ethers.getSigners();
 
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20 = await erc20Factory.deploy();
     const erc721Factory = await ethers.getContractFactory("RPC721");
     const erc721 = await erc721Factory.deploy();
-    const Reverse = await ethers.getContractFactory("RedeemProtocolReverse");
-    const reverse = await Reverse.deploy(
-      reverseOp.address,
+    const Realm = await ethers.getContractFactory("RedeemProtocolRealm");
+    const realm = await Realm.deploy(
+      realmOp.address,
       ethers.constants.AddressZero,
       {
         amount: ethers.utils.parseEther("0.01"),
@@ -199,23 +199,23 @@ describe("RedeemProtocolReverse", function () {
         token: erc20.address,
       }
     );
-    await reverse.initialize(
+    await realm.initialize(
       0, ethers.utils.parseEther("0.1"), ethers.constants.AddressZero,
     );
 
-    return { reverse, reverseOp, otherAccount, erc20, erc721 };
+    return { realm, realmOp, otherAccount, erc20, erc721 };
   };
 
-  async function deployReverseBaseRedeemFeeTransfer() {
-    const [deployer, reverseOp, otherAccount, receiver] = await ethers.getSigners();
+  async function deployRealmBaseRedeemFeeTransfer() {
+    const [deployer, realmOp, otherAccount, receiver] = await ethers.getSigners();
 
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20 = await erc20Factory.deploy();
     const erc721Factory = await ethers.getContractFactory("RPC721");
     const erc721 = await erc721Factory.deploy();
-    const Reverse = await ethers.getContractFactory("RedeemProtocolReverse");
-    const reverse = await Reverse.deploy(
-      reverseOp.address,
+    const Realm = await ethers.getContractFactory("RedeemProtocolRealm");
+    const realm = await Realm.deploy(
+      realmOp.address,
       ethers.constants.AddressZero,
       {
         amount: ethers.utils.parseEther("0.01"),
@@ -226,23 +226,23 @@ describe("RedeemProtocolReverse", function () {
         token: erc20.address,
       }
     );
-    await reverse.initialize(
+    await realm.initialize(
       1, ethers.utils.parseEther("0.1"), receiver.address,
     );
 
-    return { reverse, reverseOp, otherAccount, erc20, erc721 };
+    return { realm, realmOp, otherAccount, erc20, erc721 };
   };
 
-  async function deployReverseBaseRedeemFeeBurn() {
-    const [deployer, reverseOp, otherAccount] = await ethers.getSigners();
+  async function deployRealmBaseRedeemFeeBurn() {
+    const [deployer, realmOp, otherAccount] = await ethers.getSigners();
 
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20 = await erc20Factory.deploy();
     const erc721Factory = await ethers.getContractFactory("RPC721");
     const erc721 = await erc721Factory.deploy();
-    const Reverse = await ethers.getContractFactory("RedeemProtocolReverse");
-    const reverse = await Reverse.deploy(
-      reverseOp.address,
+    const Realm = await ethers.getContractFactory("RedeemProtocolRealm");
+    const realm = await Realm.deploy(
+      realmOp.address,
       ethers.constants.AddressZero,
       {
         amount: ethers.utils.parseEther("0.01"),
@@ -253,15 +253,15 @@ describe("RedeemProtocolReverse", function () {
         token: erc20.address,
       }
     );
-    await reverse.initialize(
+    await realm.initialize(
       2, ethers.utils.parseEther("0.1"), ethers.constants.AddressZero,
     );
 
-    return { reverse, reverseOp, otherAccount, erc20, erc721 };
+    return { realm, realmOp, otherAccount, erc20, erc721 };
   };
 
-  async function deployReverseWithMultiTokensMark() {
-    const [ deployer, reverseOp, otherAccount, feeReceiver ] = await ethers.getSigners();
+  async function deployRealmWithMultiTokensMark() {
+    const [ deployer, realmOp, otherAccount, feeReceiver ] = await ethers.getSigners();
 
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20A = await erc20Factory.deploy();
@@ -285,18 +285,18 @@ describe("RedeemProtocolReverse", function () {
       },
       feeReceiver.address,
     );
-    await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
-    await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), reverseOp.address);
-    const reverse = await createReverse(
-      factory, reverseOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 0, "0.005", "0.01", "0.001",
+    await erc20A.mint(realmOp.address, ethers.utils.parseEther("0.1"));
+    await erc20A.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), realmOp.address);
+    const realm = await createRealm(
+      factory, realmOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 0, "0.005", "0.01", "0.001",
     );
 
-    return { factory, reverse, reverseOp, otherAccount, feeReceiver, erc20A, erc20B, erc721A, erc721B };
+    return { factory, realm, realmOp, otherAccount, feeReceiver, erc20A, erc20B, erc721A, erc721B };
   };
 
-  async function deployReverseWithMultiTokensTransfer() {
-    const [ deployer, reverseOp, otherAccount, receiver, feeReceiver ] = await ethers.getSigners();
+  async function deployRealmWithMultiTokensTransfer() {
+    const [ deployer, realmOp, otherAccount, receiver, feeReceiver ] = await ethers.getSigners();
 
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20A = await erc20Factory.deploy();
@@ -322,18 +322,18 @@ describe("RedeemProtocolReverse", function () {
       },
       feeReceiver.address,
     );
-    await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
-    await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), reverseOp.address);
-    const reverse = await createReverse(
-      factory, reverseOp, receiver.address, forwarder.address, erc20A, 1, "0.005", "0.01", "0.001",
+    await erc20A.mint(realmOp.address, ethers.utils.parseEther("0.1"));
+    await erc20A.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), realmOp.address);
+    const realm = await createRealm(
+      factory, realmOp, receiver.address, forwarder.address, erc20A, 1, "0.005", "0.01", "0.001",
     );
 
-    return { factory, reverse, reverseOp, otherAccount, receiver, erc20A, erc20B, erc721A, erc721B, forwarder };
+    return { factory, realm, realmOp, otherAccount, receiver, erc20A, erc20B, erc721A, erc721B, forwarder };
   };
 
-  async function deployReverseWithMultiTokensBurn() {
-    const [ deployer, reverseOp, otherAccount, feeReceiver ] = await ethers.getSigners();
+  async function deployRealmWithMultiTokensBurn() {
+    const [ deployer, realmOp, otherAccount, feeReceiver ] = await ethers.getSigners();
 
     const erc20Factory = await ethers.getContractFactory("RPC20");
     const erc20A = await erc20Factory.deploy();
@@ -357,68 +357,68 @@ describe("RedeemProtocolReverse", function () {
       },
       feeReceiver.address,
     );
-    await erc20A.mint(reverseOp.address, ethers.utils.parseEther("0.1"));
-    await erc20A.connect(reverseOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), reverseOp.address);
-    const reverse = await createReverse(
-      factory, reverseOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 2, "0.005", "0.01", "0.001",
+    await erc20A.mint(realmOp.address, ethers.utils.parseEther("0.1"));
+    await erc20A.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
+    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), realmOp.address);
+    const realm = await createRealm(
+      factory, realmOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 2, "0.005", "0.01", "0.001",
     );
 
-    return { factory, reverse, reverseOp, otherAccount, erc20A, erc20B, erc721A, erc721B };
+    return { factory, realm, realmOp, otherAccount, erc20A, erc20B, erc721A, erc721B };
   };
 
   describe("permission", function () {
-    it("should has ADMIN role for reverseOp", async function () {
-      const { reverse, reverseOp } = await loadFixture(deployReverse);
-      expect(await reverse.hasRole(ethers.utils.id("ADMIN"), reverseOp.address)).to.be.true;
+    it("should has ADMIN role for realmOp", async function () {
+      const { realm, realmOp } = await loadFixture(deployRealm);
+      expect(await realm.hasRole(ethers.utils.id("ADMIN"), realmOp.address)).to.be.true;
     });
 
-    it("should has OPERATOR role for reverseOp", async function () {
-      const { reverse, reverseOp } = await loadFixture(deployReverse);
-      expect(await reverse.hasRole(ethers.utils.id("OPERATOR"), reverseOp.address)).to.be.true;
+    it("should has OPERATOR role for realmOp", async function () {
+      const { realm, realmOp } = await loadFixture(deployRealm);
+      expect(await realm.hasRole(ethers.utils.id("OPERATOR"), realmOp.address)).to.be.true;
     });
 
     it("should has ADMIN role admin for ADMIN", async function () {
-      const { reverse } = await loadFixture(deployReverse);
-      expect(await reverse.getRoleAdmin(ethers.utils.id("ADMIN"))).to.equal(ethers.utils.id("ADMIN"));
+      const { realm } = await loadFixture(deployRealm);
+      expect(await realm.getRoleAdmin(ethers.utils.id("ADMIN"))).to.equal(ethers.utils.id("ADMIN"));
     });
 
     it("should has OPERATOR role admin for ADMIN", async function () {
-      const { reverse } = await loadFixture(deployReverse);
-      expect(await reverse.getRoleAdmin(ethers.utils.id("OPERATOR"))).to.equal(ethers.utils.id("ADMIN"));
+      const { realm } = await loadFixture(deployRealm);
+      expect(await realm.getRoleAdmin(ethers.utils.id("OPERATOR"))).to.equal(ethers.utils.id("ADMIN"));
     });
 
     it("should not have ADMIN role for other account", async function () {
-      const { reverse, otherAccount } = await loadFixture(deployReverse);
-      expect(await reverse.hasRole(ethers.utils.id("ADMIN"), otherAccount.address)).to.be.false;
+      const { realm, otherAccount } = await loadFixture(deployRealm);
+      expect(await realm.hasRole(ethers.utils.id("ADMIN"), otherAccount.address)).to.be.false;
     });
 
     it("should not have OPERATOR role for other account", async function () {
-      const { reverse, otherAccount } = await loadFixture(deployReverse);
-      expect(await reverse.hasRole(ethers.utils.id("OPERATOR"), otherAccount.address)).to.be.false;
+      const { realm, otherAccount } = await loadFixture(deployRealm);
+      expect(await realm.hasRole(ethers.utils.id("OPERATOR"), otherAccount.address)).to.be.false;
     });
 
     it("should be able to grant ADMIN role to other account from ADMIN", async function () {
-      const { reverse, reverseOp, otherAccount } = await loadFixture(deployReverse);
-      await reverse.connect(reverseOp).grantRole(ethers.utils.id("ADMIN"), otherAccount.address);
-      expect(await reverse.hasRole(ethers.utils.id("ADMIN"), otherAccount.address)).to.be.true;
+      const { realm, realmOp, otherAccount } = await loadFixture(deployRealm);
+      await realm.connect(realmOp).grantRole(ethers.utils.id("ADMIN"), otherAccount.address);
+      expect(await realm.hasRole(ethers.utils.id("ADMIN"), otherAccount.address)).to.be.true;
     });
 
     it("should be able to grant OPERATOR role to other account from ADMIN", async function () {
-      const { reverse, reverseOp, otherAccount } = await loadFixture(deployReverse);
-      await reverse.connect(reverseOp).grantRole(ethers.utils.id("OPERATOR"), otherAccount.address);
-      expect(await reverse.hasRole(ethers.utils.id("OPERATOR"), otherAccount.address)).to.be.true;
+      const { realm, realmOp, otherAccount } = await loadFixture(deployRealm);
+      await realm.connect(realmOp).grantRole(ethers.utils.id("OPERATOR"), otherAccount.address);
+      expect(await realm.hasRole(ethers.utils.id("OPERATOR"), otherAccount.address)).to.be.true;
     });
 
     it("should not be able to grant ADMIN role to other account from non ADMIN", async function () {
-      const { reverse, otherAccount } = await loadFixture(deployReverse);
-      await expect(reverse.connect(otherAccount).grantRole(ethers.utils.id("ADMIN"), otherAccount.address))
+      const { realm, otherAccount } = await loadFixture(deployRealm);
+      await expect(realm.connect(otherAccount).grantRole(ethers.utils.id("ADMIN"), otherAccount.address))
         .to.be.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("ADMIN")}`);
     });
 
     it("should not be able to grant OPERATOR role to other account from non ADMIN", async function () {
-      const { reverse, otherAccount } = await loadFixture(deployReverse);
-      await expect(reverse.connect(otherAccount).grantRole(ethers.utils.id("OPERATOR"), otherAccount.address))
+      const { realm, otherAccount } = await loadFixture(deployRealm);
+      await expect(realm.connect(otherAccount).grantRole(ethers.utils.id("OPERATOR"), otherAccount.address))
         .to.be.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("ADMIN")}`);
     });
   });
@@ -433,7 +433,7 @@ describe("RedeemProtocolReverse", function () {
     async function redeem(
       method: redeemMethod,
       factory: RedeemProtocolFactory,
-      reverse: RedeemProtocolReverse,
+      realm: RedeemProtocolRealm,
       redeemer: SignerWithAddress,
       erc20: Contract,
       erc721: Contract,
@@ -441,38 +441,38 @@ describe("RedeemProtocolReverse", function () {
       v: BigNumberish,
       r: string,
       s: string,
-      expReverseERC20Balance: string,
+      expRealmERC20Balance: string,
       expRedeemerERC20Balance: string,
       expFeeReceiverERC20Balance: string,
     ) {
       let fn: any;
       switch(method) {
         case redeemMethod.redeemWithMark:
-          fn = reverse.connect(redeemer).redeemWithMark;
+          fn = realm.connect(redeemer).redeemWithMark;
           break;
         case redeemMethod.redeemWithTransfer:
-          fn = reverse.connect(redeemer).redeemWithTransfer;
+          fn = realm.connect(redeemer).redeemWithTransfer;
           break;
         case redeemMethod.redeemWithBurn:
-          fn = reverse.connect(redeemer).redeemWithBurn;
+          fn = realm.connect(redeemer).redeemWithBurn;
           break;
       };
 
       const mockCustomId = ethers.utils.formatBytes32String('mock-custom-id');
       await expect(fn(
         erc721.address, 0, mockCustomId, deadline, v, r, s,
-      )).to.emit(reverse, "Redeemed").withArgs(
+      )).to.emit(realm, "Redeemed").withArgs(
         erc721.address, 0, method-1, redeemer.address, mockCustomId,
       );
 
-      expect(await erc20.balanceOf(reverse.address)).to.equal(ethers.utils.parseEther(expReverseERC20Balance));
+      expect(await erc20.balanceOf(realm.address)).to.equal(ethers.utils.parseEther(expRealmERC20Balance));
       expect(await erc20.balanceOf(redeemer.address)).to.equal(ethers.utils.parseEther(expRedeemerERC20Balance));
       expect(await erc20.balanceOf(await factory.feeReceiver())).to.equal(ethers.utils.parseEther(expFeeReceiverERC20Balance));
 
       if (method === redeemMethod.redeemWithTransfer) {
         expect(await erc721.balanceOf(redeemer.address)).to.equal(0);
-        expect(await erc721.balanceOf(await reverse.tokenReceiver())).to.equal(1);
-        expect(await erc721.ownerOf(0)).to.equal(await reverse.tokenReceiver());
+        expect(await erc721.balanceOf(await realm.tokenReceiver())).to.equal(1);
+        expect(await erc721.ownerOf(0)).to.equal(await realm.tokenReceiver());
       }
 
       if (method === redeemMethod.redeemWithBurn) {
@@ -481,84 +481,84 @@ describe("RedeemProtocolReverse", function () {
     };
 
     it("with mark should be success", async function () {
-      const { factory, reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensMark);
+      const { factory, realm, otherAccount, erc20A, erc721A } = await loadFixture(deployRealmWithMultiTokensMark);
       await erc721A.safeMint(otherAccount.address);
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("1"));
-      await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
+      await erc20A.connect(otherAccount).approve(realm.address, ethers.utils.parseEther("0.01"));
       await redeem(
-        redeemMethod.redeemWithMark, factory, reverse, otherAccount, erc20A, erc721A, 0, 0, zeroBytes32, zeroBytes32,
-        "0.004", "0.995", "0.101" // plus create reverse fee
+        redeemMethod.redeemWithMark, factory, realm, otherAccount, erc20A, erc721A, 0, 0, zeroBytes32, zeroBytes32,
+        "0.004", "0.995", "0.101" // plus create realm fee
       );
     });
 
     it("should be reverted with second redemption", async function () {
-      const { reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensMark);
+      const { realm, otherAccount, erc20A, erc721A } = await loadFixture(deployRealmWithMultiTokensMark);
       await erc721A.safeMint(otherAccount.address);
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("1"));
-      await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
+      await erc20A.connect(otherAccount).approve(realm.address, ethers.utils.parseEther("0.01"));
       
-      await expect(reverse.connect(otherAccount).redeemWithMark(
+      await expect(realm.connect(otherAccount).redeemWithMark(
         erc721A.address, 0, zeroBytes32, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.emit(reverse, "Redeemed").withArgs(
+      )).to.emit(realm, "Redeemed").withArgs(
         erc721A.address, 0, 0, otherAccount.address, ethers.utils.formatBytes32String('DEFAULT_CUSTOM_ID'),
       );
 
-      await expect(reverse.connect(otherAccount).redeemWithMark(
+      await expect(realm.connect(otherAccount).redeemWithMark(
         erc721A.address, 0, zeroBytes32, 0, 0, zeroBytes32, zeroBytes32,
       )).to.be.revertedWith("token has been redeemed");
     });
 
     it("should be success with different custom id", async function () {
-      const { reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensMark);
+      const { realm, otherAccount, erc20A, erc721A } = await loadFixture(deployRealmWithMultiTokensMark);
       await erc721A.safeMint(otherAccount.address);
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("1"));
 
-      await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
-      await expect(reverse.connect(otherAccount).redeemWithMark(
+      await erc20A.connect(otherAccount).approve(realm.address, ethers.utils.parseEther("0.01"));
+      await expect(realm.connect(otherAccount).redeemWithMark(
         erc721A.address, 0, ethers.utils.formatBytes32String('custom-id-1'), 0, 0, zeroBytes32, zeroBytes32,
-      )).to.emit(reverse, "Redeemed").withArgs(
+      )).to.emit(realm, "Redeemed").withArgs(
         erc721A.address, 0, 0, otherAccount.address, ethers.utils.formatBytes32String('custom-id-1'),
       );
 
-      await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
-      await expect(reverse.connect(otherAccount).redeemWithMark(
+      await erc20A.connect(otherAccount).approve(realm.address, ethers.utils.parseEther("0.01"));
+      await expect(realm.connect(otherAccount).redeemWithMark(
         erc721A.address, 0, ethers.utils.formatBytes32String('custom-id-2'), 0, 0, zeroBytes32, zeroBytes32,
-      )).to.emit(reverse, "Redeemed").withArgs(
+      )).to.emit(realm, "Redeemed").withArgs(
         erc721A.address, 0, 0, otherAccount.address, ethers.utils.formatBytes32String('custom-id-2'),
       );
     });
 
     it("with transfer should be success", async function () {
-      const { factory, reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensTransfer);
+      const { factory, realm, otherAccount, erc20A, erc721A } = await loadFixture(deployRealmWithMultiTokensTransfer);
       await erc721A.safeMint(otherAccount.address);
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("1"));
-      await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
-      await erc721A.connect(otherAccount).approve(reverse.address, 0);
+      await erc20A.connect(otherAccount).approve(realm.address, ethers.utils.parseEther("0.01"));
+      await erc721A.connect(otherAccount).approve(realm.address, 0);
       await redeem(
-        redeemMethod.redeemWithTransfer, factory, reverse, otherAccount, erc20A, erc721A, 0, 0, zeroBytes32, zeroBytes32,
+        redeemMethod.redeemWithTransfer, factory, realm, otherAccount, erc20A, erc721A, 0, 0, zeroBytes32, zeroBytes32,
         "0.004", "0.995", "0.101",
       );
     });
 
     it("permit should be success", async function () {
-      const { factory, reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensTransfer);
+      const { factory, realm, otherAccount, erc20A, erc721A } = await loadFixture(deployRealmWithMultiTokensTransfer);
       await erc721A.safeMint(otherAccount.address);
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("1"));
       const deadline = Date.now() + 60;
       const permitData = getPermitData(
-        otherAccount.address, reverse.address, ethers.utils.parseEther("0.005"), 0, deadline, erc20A.address, "RPC20",
+        otherAccount.address, realm.address, ethers.utils.parseEther("0.005"), 0, deadline, erc20A.address, "RPC20",
       );
       const permit = await otherAccount._signTypedData(permitData.domain, permitData.types, permitData.message);
       const sig = ethers.utils.splitSignature(permit);
-      await erc721A.connect(otherAccount).approve(reverse.address, 0);
+      await erc721A.connect(otherAccount).approve(realm.address, 0);
       await redeem(
-        redeemMethod.redeemWithTransfer, factory, reverse, otherAccount, erc20A, erc721A, deadline, sig.v, sig.r, sig.s,
+        redeemMethod.redeemWithTransfer, factory, realm, otherAccount, erc20A, erc721A, deadline, sig.v, sig.r, sig.s,
         "0.004", "0.995", "0.101",
       );
     });
 
     it("should success via forwarder", async function () {
-      const { reverse, reverseOp, otherAccount, receiver, erc20A, erc721A, forwarder } = await loadFixture(deployReverseWithMultiTokensTransfer);
+      const { realm, realmOp, otherAccount, receiver, erc20A, erc721A, forwarder } = await loadFixture(deployRealmWithMultiTokensTransfer);
       await erc721A.safeMint(otherAccount.address);
       await erc20A.mint(forwarder.address, ethers.utils.parseEther("1"));
       
@@ -576,17 +576,17 @@ describe("RedeemProtocolReverse", function () {
       const meta = getMetadata(
         forwarder.address,
         otherAccount.address,
-        reverse.address,
+        realm.address,
         txData,
       );
       const sig = await otherAccount._signTypedData(meta.domain, meta.types, meta.message);
-      await erc721A.connect(otherAccount).approve(reverse.address, 0);
-      await forwarder.approve(erc20A.address, reverse.address, ethers.utils.parseEther("0.01"));
+      await erc721A.connect(otherAccount).approve(realm.address, 0);
+      await forwarder.approve(erc20A.address, realm.address, ethers.utils.parseEther("0.01"));
       
-      await forwarder.connect(reverseOp).execute(
+      await forwarder.connect(realmOp).execute(
         {
           from: otherAccount.address,
-          to: reverse.address,
+          to: realm.address,
           value: 0,
           gas: 200000,
           nonce: 0,
@@ -600,35 +600,35 @@ describe("RedeemProtocolReverse", function () {
     });
 
     it("should be success with empty custom id", async function () {
-      const { reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensTransfer);
+      const { realm, otherAccount, erc20A, erc721A } = await loadFixture(deployRealmWithMultiTokensTransfer);
       await erc721A.safeMint(otherAccount.address);
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("1"));
-      await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
-      await erc721A.connect(otherAccount).approve(reverse.address, 0);
+      await erc20A.connect(otherAccount).approve(realm.address, ethers.utils.parseEther("0.01"));
+      await erc721A.connect(otherAccount).approve(realm.address, 0);
       
-      await expect(reverse.connect(otherAccount).redeemWithTransfer(
+      await expect(realm.connect(otherAccount).redeemWithTransfer(
         erc721A.address, 0, zeroBytes32, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.emit(reverse, "Redeemed").withArgs(
+      )).to.emit(realm, "Redeemed").withArgs(
         erc721A.address, 0, 1, otherAccount.address, ethers.utils.formatBytes32String("DEFAULT_CUSTOM_ID"),
       );
     });
 
     it("with burn should be success", async function () {
-      const { factory, reverse, otherAccount, erc20A, erc721A } = await loadFixture(deployReverseWithMultiTokensBurn);
+      const { factory, realm, otherAccount, erc20A, erc721A } = await loadFixture(deployRealmWithMultiTokensBurn);
       await erc721A.safeMint(otherAccount.address);
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("1"));
-      await erc20A.connect(otherAccount).approve(reverse.address, ethers.utils.parseEther("0.01"));
-      await erc721A.connect(otherAccount).approve(reverse.address, 0);
+      await erc20A.connect(otherAccount).approve(realm.address, ethers.utils.parseEther("0.01"));
+      await erc721A.connect(otherAccount).approve(realm.address, 0);
       await redeem(
-        redeemMethod.redeemWithBurn, factory, reverse, otherAccount, erc20A, erc721A, 0, 0, zeroBytes32, zeroBytes32,
+        redeemMethod.redeemWithBurn, factory, realm, otherAccount, erc20A, erc721A, 0, 0, zeroBytes32, zeroBytes32,
         "0.004", "0.995", "0.101",
       );
     });
   });
 
-  describe("updateReverse", function () {
-    async function updateReverse(
-      reverse: RedeemProtocolReverse,
+  describe("updateRealm", function () {
+    async function updateRealm(
+      realm: RedeemProtocolRealm,
       updater: SignerWithAddress,
       method: BigNumberish,
       redeemAmount: string,
@@ -641,90 +641,90 @@ describe("RedeemProtocolReverse", function () {
       expBalance: string,
       feeReceiver: string,
     ) {
-      await reverse.connect(updater).updateReverse(
+      await realm.connect(updater).updateRealm(
         method, ethers.utils.parseEther(redeemAmount), tokenReceiver,
         deadline, v, r, s,
       );
 
-      expect(await reverse.redeemMethod()).to.equal(method);
-      expect(await reverse.tokenReceiver()).to.equal(tokenReceiver);
+      expect(await realm.redeemMethod()).to.equal(method);
+      expect(await realm.tokenReceiver()).to.equal(tokenReceiver);
       expect(await erc20.balanceOf(updater.address)).to.equal(ethers.utils.parseEther(expBalance));
       expect(await erc20.balanceOf(feeReceiver)).to.equal(ethers.utils.parseEther("0.11"));
     };
 
-    it("should update reverse with mark success", async function () {
-      const { reverse, reverseOp, erc20A, feeReceiver } = await loadFixture(deployReverse);
-      await erc20A.mint(reverseOp.address, ethers.utils.parseEther("1"));
-      await erc20A.connect(reverseOp).approve(reverse.address, ethers.utils.parseEther("0.01"));
-      await updateReverse(
-        reverse, reverseOp, 0, "1", erc20A, ethers.constants.AddressZero,
+    it("should update realm with mark success", async function () {
+      const { realm, realmOp, erc20A, feeReceiver } = await loadFixture(deployRealm);
+      await erc20A.mint(realmOp.address, ethers.utils.parseEther("1"));
+      await erc20A.connect(realmOp).approve(realm.address, ethers.utils.parseEther("0.01"));
+      await updateRealm(
+        realm, realmOp, 0, "1", erc20A, ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32, "0.99", feeReceiver.address,
       );
     });
 
-    it("should update reverse with transfer success", async function () {
-      const { reverse, reverseOp, otherAccount, feeReceiver, erc20A } = await loadFixture(deployReverse);
+    it("should update realm with transfer success", async function () {
+      const { realm, realmOp, otherAccount, feeReceiver, erc20A } = await loadFixture(deployRealm);
       const erc721Factory = await ethers.getContractFactory("RPC721");
-      const erc721 = await erc721Factory.connect(reverseOp).deploy();
-      await erc20A.mint(reverseOp.address, ethers.utils.parseEther("1"));
-      await erc20A.connect(reverseOp).approve(reverse.address, ethers.utils.parseEther("0.01"));
+      const erc721 = await erc721Factory.connect(realmOp).deploy();
+      await erc20A.mint(realmOp.address, ethers.utils.parseEther("1"));
+      await erc20A.connect(realmOp).approve(realm.address, ethers.utils.parseEther("0.01"));
       
-      await updateReverse(
-        reverse, reverseOp, 1, "1", erc20A, otherAccount.address,
+      await updateRealm(
+        realm, realmOp, 1, "1", erc20A, otherAccount.address,
         0, 0, zeroBytes32, zeroBytes32, "0.99", feeReceiver.address,
       );
     });
 
-    it("should update reverse with burn success", async function () {
-      const { reverse, reverseOp, otherAccount, feeReceiver, erc20A } = await loadFixture(deployReverse);
+    it("should update realm with burn success", async function () {
+      const { realm, realmOp, otherAccount, feeReceiver, erc20A } = await loadFixture(deployRealm);
       const erc721Factory = await ethers.getContractFactory("RPC721");
-      const erc721 = await erc721Factory.connect(reverseOp).deploy();
-      await erc20A.mint(reverseOp.address, ethers.utils.parseEther("1"));
-      await erc20A.connect(reverseOp).approve(reverse.address, ethers.utils.parseEther("0.01"));
+      const erc721 = await erc721Factory.connect(realmOp).deploy();
+      await erc20A.mint(realmOp.address, ethers.utils.parseEther("1"));
+      await erc20A.connect(realmOp).approve(realm.address, ethers.utils.parseEther("0.01"));
       
-      await updateReverse(
-        reverse, reverseOp, 2, "1", erc20A, otherAccount.address,
+      await updateRealm(
+        realm, realmOp, 2, "1", erc20A, otherAccount.address,
         0, 0, zeroBytes32, zeroBytes32, "0.99", feeReceiver.address,
       );
     });
 
-    it("should update reverse with mark permit success", async function () {
-      const { reverse, reverseOp, erc20A, feeReceiver } = await loadFixture(deployReverse);
-      await erc20A.mint(reverseOp.address, ethers.utils.parseEther("1"));
+    it("should update realm with mark permit success", async function () {
+      const { realm, realmOp, erc20A, feeReceiver } = await loadFixture(deployRealm);
+      await erc20A.mint(realmOp.address, ethers.utils.parseEther("1"));
       const deadline = Date.now() + 60;
       const permitData = getPermitData(
-        reverseOp.address, reverse.address, ethers.utils.parseEther("0.01"), 0, deadline, erc20A.address, "RPC20",
+        realmOp.address, realm.address, ethers.utils.parseEther("0.01"), 0, deadline, erc20A.address, "RPC20",
       );
-      const permit = await reverseOp._signTypedData(permitData.domain, permitData.types, permitData.message);
+      const permit = await realmOp._signTypedData(permitData.domain, permitData.types, permitData.message);
       const sig = ethers.utils.splitSignature(permit);
-      await updateReverse(
-        reverse, reverseOp, 0, "1", erc20A, ethers.constants.AddressZero,
+      await updateRealm(
+        realm, realmOp, 0, "1", erc20A, ethers.constants.AddressZero,
         deadline, sig.v, sig.r, sig.s, "0.99", feeReceiver.address,
       );
     });
 
     it("should be reverted when not OPERATOR role", async function () {
-      const { reverse, otherAccount } = await loadFixture(deployReverse);
-      await expect(reverse.connect(otherAccount).updateReverse(
+      const { realm, otherAccount } = await loadFixture(deployRealm);
+      await expect(realm.connect(otherAccount).updateRealm(
         0, ethers.utils.parseEther("1"), ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32,
       )).to.be.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("OPERATOR")}`);
     });
 
     it("should be reverted when tokenReceiver is zero address, transfer", async function () {
-      const { reverse, reverseOp } = await loadFixture(deployReverse);
+      const { realm, realmOp } = await loadFixture(deployRealm);
       const erc721Factory = await ethers.getContractFactory("RPC721");
-      const erc721 = await erc721Factory.connect(reverseOp).deploy();
-      await expect(reverse.connect(reverseOp).updateReverse(
+      const erc721 = await erc721Factory.connect(realmOp).deploy();
+      await expect(realm.connect(realmOp).updateRealm(
         1, ethers.utils.parseEther("1"), ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32,
       )).to.be.revertedWith("tokenReceiver must be set");
     });
 
     it("should be reverted when redeem amount less than base redeem fee", async function () {
-      const { reverse, reverseOp, erc20A, feeReceiver } = await loadFixture(deployReverse);
-      await expect(updateReverse(
-        reverse, reverseOp, 0, "0.0009", erc20A, ethers.constants.AddressZero,
+      const { realm, realmOp, erc20A, feeReceiver } = await loadFixture(deployRealm);
+      await expect(updateRealm(
+        realm, realmOp, 0, "0.0009", erc20A, ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32, "0.99", feeReceiver.address,
       )).to.be.revertedWith("redeemAmount must be greater than baseRedeemFee");
     });
@@ -732,14 +732,14 @@ describe("RedeemProtocolReverse", function () {
 
   describe("grantOperator", function () {
     it("should be success", async function () {
-      const { reverse, reverseOp, otherAccount } = await loadFixture(deployReverse);
-      await reverse.connect(reverseOp).grantOperator(otherAccount.address);
-      expect(await reverse.hasRole(ethers.utils.id("OPERATOR"), otherAccount.address)).to.be.true;
+      const { realm, realmOp, otherAccount } = await loadFixture(deployRealm);
+      await realm.connect(realmOp).grantOperator(otherAccount.address);
+      expect(await realm.hasRole(ethers.utils.id("OPERATOR"), otherAccount.address)).to.be.true;
     });
 
     it("should be reverted when not ADMIN role", async function () {
-      const { reverse, otherAccount } = await loadFixture(deployReverse);
-      await expect(reverse.connect(otherAccount).grantOperator(otherAccount.address))
+      const { realm, otherAccount } = await loadFixture(deployRealm);
+      await expect(realm.connect(otherAccount).grantOperator(otherAccount.address))
         .to.be.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("ADMIN")}`);
     });
   });
@@ -747,61 +747,61 @@ describe("RedeemProtocolReverse", function () {
 
   describe("withdraw", function () {
     it("should be success", async function () {
-      const { reverse, reverseOp, otherAccount, erc20A } = await loadFixture(deployReverse);
-      await erc20A.mint(reverse.address, ethers.utils.parseEther("1"));
-      await reverse.connect(reverseOp).withdraw(erc20A.address, ethers.utils.parseEther("0.9"), otherAccount.address);
+      const { realm, realmOp, otherAccount, erc20A } = await loadFixture(deployRealm);
+      await erc20A.mint(realm.address, ethers.utils.parseEther("1"));
+      await realm.connect(realmOp).withdraw(erc20A.address, ethers.utils.parseEther("0.9"), otherAccount.address);
       expect(await erc20A.balanceOf(otherAccount.address)).to.eq(ethers.utils.parseEther("0.9"));
-      expect(await erc20A.balanceOf(reverse.address)).to.equal(ethers.utils.parseEther("0.1"));
+      expect(await erc20A.balanceOf(realm.address)).to.equal(ethers.utils.parseEther("0.1"));
     });
 
     it("should be reverted when not ADMIN role", async function () {
-      const { reverse, otherAccount, erc20A } = await loadFixture(deployReverse);
-      await expect(reverse.connect(otherAccount).withdraw(erc20A.address, ethers.utils.parseEther("0.9"), otherAccount.address))
+      const { realm, otherAccount, erc20A } = await loadFixture(deployRealm);
+      await expect(realm.connect(otherAccount).withdraw(erc20A.address, ethers.utils.parseEther("0.9"), otherAccount.address))
         .to.be.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("ADMIN")}`);
     });
   });
 
   describe("pause", function () {
     it("should pause success", async function () {
-      const { factory, reverse } = await loadFixture(deployReverse);
-      await factory.pauseReverse(reverse.address);
-      expect(await reverse.paused()).to.be.true;
+      const { factory, realm } = await loadFixture(deployRealm);
+      await factory.pauseRealm(realm.address);
+      expect(await realm.paused()).to.be.true;
     });
 
     it("should be reverted when not from factory", async function () {
-      const { reverse, reverseOp } = await loadFixture(deployReverse);
-      await expect(reverse.connect(reverseOp).pause()).to.be.revertedWith("only factory");
+      const { realm, realmOp } = await loadFixture(deployRealm);
+      await expect(realm.connect(realmOp).pause()).to.be.revertedWith("only factory");
     });
 
     it("should be reverted when paused, redeemWithMark", async function () {
-      const { factory, reverse, otherAccount, erc721A } = await loadFixture(deployReverse);
-      await factory.pauseReverse(reverse.address);
+      const { factory, realm, otherAccount, erc721A } = await loadFixture(deployRealm);
+      await factory.pauseRealm(realm.address);
       const mockCustomId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('mock-custom-id')]);
-      await expect(reverse.connect(otherAccount).redeemWithMark(
+      await expect(realm.connect(otherAccount).redeemWithMark(
         erc721A.address, 0, mockCustomId, 0, 0, zeroBytes32, zeroBytes32,
       )).to.be.revertedWith("Pausable: paused");
     });
 
-    it("should be reverted when paused, updateReverse", async function () {
-      const { factory, reverse, reverseOp } = await loadFixture(deployReverse);
-      await factory.pauseReverse(reverse.address);
-      await expect(reverse.connect(reverseOp).updateReverse(
+    it("should be reverted when paused, updateRealm", async function () {
+      const { factory, realm, realmOp } = await loadFixture(deployRealm);
+      await factory.pauseRealm(realm.address);
+      await expect(realm.connect(realmOp).updateRealm(
         0, ethers.utils.parseEther("1"), ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32,
       )).to.be.revertedWith("Pausable: paused");
     });
 
     it("should be reverted when paused, grantOperator", async function () {
-      const { factory, reverse, reverseOp, otherAccount } = await loadFixture(deployReverse);
-      await factory.pauseReverse(reverse.address);
-      await expect(reverse.connect(reverseOp).grantOperator(otherAccount.address))
+      const { factory, realm, realmOp, otherAccount } = await loadFixture(deployRealm);
+      await factory.pauseRealm(realm.address);
+      await expect(realm.connect(realmOp).grantOperator(otherAccount.address))
         .to.be.revertedWith("Pausable: paused");
     });
 
     it("should be reverted when paused, withdraw", async function () {
-      const { factory, reverse, reverseOp, otherAccount, erc20A } = await loadFixture(deployReverse);
-      await factory.pauseReverse(reverse.address);
-      await expect(reverse.connect(reverseOp).withdraw(erc20A.address, ethers.utils.parseEther("0.9"), otherAccount.address))
+      const { factory, realm, realmOp, otherAccount, erc20A } = await loadFixture(deployRealm);
+      await factory.pauseRealm(realm.address);
+      await expect(realm.connect(realmOp).withdraw(erc20A.address, ethers.utils.parseEther("0.9"), otherAccount.address))
         .to.be.revertedWith("Pausable: paused");
     });
   });
