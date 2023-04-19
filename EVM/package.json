@@ -1,7 +1,7 @@
 {
   "dependencies": {
-    "@metamask/eth-sig-util": "^5.0.2",
-    "@openzeppelin/contracts": "^4.8.1"
+    "@openzeppelin/contracts": "^4.8.1",
+    "dotenv": "^16.0.3"
   },
   "name": "redeemprotocol-contracts",
   "version": "1.0.0",
@@ -10,8 +10,7 @@
   "author": "Redeem Protocol DAO <official@redreamer.io>",
   "license": "MIT",
   "devDependencies": {
-    "@nomicfoundation/hardhat-chai-matchers": "^1.0.5",
-    "@nomicfoundation/hardhat-toolbox": "^2.0.1",
-    "@nomiclabs/hardhat-waffle": "^2.0.3"
+    "@nomicfoundation/hardhat-chai-matchers": "^1.0.6",
+    "@nomicfoundation/hardhat-toolbox": "^2.0.1"
   }
 }

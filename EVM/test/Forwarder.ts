@@ -1,7 +1,6 @@
-import { ethers, waffle } from "hardhat";
+import { ethers } from "hardhat";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect } from "chai";
-const { provider } = waffle;
 import { RPC20, RPC721 } from "../typechain-types/contracts/test";
 import { RedeemProtocolFactory, RedeemProtocolRealm, RedeemSystemForwarder } from "../typechain-types";
 import { defaultAbiCoder } from "@ethersproject/abi";
@@ -10,7 +9,7 @@ import { TypedDataDomain } from "ethers";
 describe("RedeemSystemForwarder", function () {
     const zeroBytes32 = ethers.utils.defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('')]);
     const setupFee = ethers.utils.parseEther("0.1");
-    const udpateFee = ethers.utils.parseEther("0.2");
+    const updateFee = ethers.utils.parseEther("0.2");
     const redeemFee = ethers.utils.parseEther("0.3");
     const realmRedeemFee = ethers.utils.parseEther("0.4");
     const redeemWithMarkABI = new ethers.utils.Interface([
@@ -116,7 +115,7 @@ describe("RedeemSystemForwarder", function () {
         domain = {
             name: "RedeemSystemForwarder",
             version: "1.0.0",
-            chainId: provider.network.chainId,
+            chainId: (await ethers.provider.getNetwork()).chainId,
             verifyingContract: forwarder.address
         };
     }
@@ -178,7 +177,7 @@ describe("RedeemSystemForwarder", function () {
                 token: feeToken.address,
             },
             {
-                amount: udpateFee,
+                amount: updateFee,
                 token: feeToken.address,
             },
             {
@@ -201,87 +200,91 @@ describe("RedeemSystemForwarder", function () {
         };
     }
 
-    it("Forwarder domainSeperator should be registered.", async () => {
-        expect(await forwarder.domains(domainHash)).to.be.true;
+    describe("Deployment", () => {
+        it("Should register the right domainSeperator", async () => {
+            expect(await forwarder.domains(domainHash)).to.be.true;
+        });
+
+        it("Should register the right requestTypeHash", async () => {
+            expect(await forwarder.typeHashes(requestTypeHash)).to.be.true;
+        })
+
+        it("Should send the setup fee to fee receiver after Realm has been deployed", async () => {
+            expect(await feeToken.balanceOf(feeReceiver.address)).to.equal(setupFee);
+        });
     });
 
-    it("Forwarder requestTypeHash should be registered.", async () => {
-        expect(await forwarder.typeHashes(requestTypeHash)).to.be.true;
+    describe("Redeem", () => {
+        it("Should redeem with mark successfully via forwarder", async () => {
+            const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
+                nft.address,
+                tokenId,
+                customId,
+                0,
+                0,
+                zeroBytes32,
+                zeroBytes32
+            ]);
+            const message = {
+                from: endUser.address,
+                to: realm.address,
+                nonce: Number(await forwarder.connect(clientOperator).getNonce(clientOperator.address)),
+                gas: 210000,
+                value: 0,
+                data: data,
+                validUntilTime: Math.round(Date.now() / 1000 + 30000)
+            };
+            const signature = await endUser._signTypedData(
+                domain,
+                types,
+                message
+            );
+            const transaction = await forwarder.connect(clientOperator).execute(
+                message,
+                domainHash,
+                requestTypeHash,
+                suffixData,
+                signature
+            );
+            await transaction.wait();
+            const isRedeemable = await realm.isRedeemable(nft.address, tokenId, customId);
+            expect(isRedeemable).to.be.false;
+            expect(await feeToken.balanceOf(realm.address)).to.equal(realmRedeemFee.sub(redeemFee));
+            expect(await feeToken.balanceOf(forwarder.address)).to.equal(0);
+            expect(await feeToken.balanceOf(feeReceiver.address)).to.equal(redeemFee.add(setupFee));
+        });
+
+        it("Should revert with the right error if request is expired", async () => {
+            const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
+                nft.address,
+                tokenId,
+                customId,
+                0,
+                0,
+                zeroBytes32,
+                zeroBytes32
+            ]);
+            const message = {
+                from: endUser.address,
+                to: realm.address,
+                nonce: Number(await forwarder.connect(clientOperator).getNonce(clientOperator.address)),
+                gas: 210000,
+                value: 0,
+                data: data,
+                validUntilTime: Math.round(Date.now() / 1000 - 1000)
+            };
+            const signature = await endUser._signTypedData(
+                domain,
+                types,
+                message
+            );
+            await expect(forwarder.connect(clientOperator).execute(
+                message,
+                domainHash,
+                requestTypeHash,
+                suffixData,
+                signature
+            )).to.be.revertedWith('FWD: request expired');
+        });
     })
-
-    it("FeeReceiver should receive the setup fee after Realm has been deployed.", async () => {
-        expect(await feeToken.balanceOf(feeReceiver.address)).to.equal(setupFee);
-    });
-
-    it("Redeem with mark via Forwarder", async () => {
-        const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
-            nft.address,
-            tokenId,
-            customId,
-            0,
-            0,
-            zeroBytes32,
-            zeroBytes32
-        ]);
-        const message = {
-            from: endUser.address,
-            to: realm.address,
-            nonce: Number(await forwarder.connect(clientOperator).getNonce(clientOperator.address)),
-            gas: 210000,
-            value: 0,
-            data: data,
-            validUntilTime: Math.round(Date.now()/1000 + 30000)
-        };
-        const signature = await endUser._signTypedData(
-            domain,
-            types,
-            message
-        );
-        const transaction = await forwarder.connect(clientOperator).execute(
-            message,
-            domainHash,
-            requestTypeHash,
-            suffixData,
-            signature
-        );
-        await transaction.wait();
-        const isRedeemable = await realm.isRedeemable(nft.address, tokenId, customId);
-        expect(isRedeemable).to.be.false;
-        expect(await feeToken.balanceOf(realm.address)).to.equal(realmRedeemFee.sub(redeemFee));
-        expect(await feeToken.balanceOf(forwarder.address)).to.equal(0);
-        expect(await feeToken.balanceOf(feeReceiver.address)).to.equal(redeemFee.add(setupFee));
-    });
-
-    it("Redeem with mark via Forwarder but should be expired", async () => {
-        const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
-            nft.address,
-            tokenId,
-            customId,
-            0,
-            0,
-            zeroBytes32,
-            zeroBytes32
-        ]);
-        const message = {
-            from: endUser.address,
-            to: realm.address,
-            nonce: Number(await forwarder.connect(clientOperator).getNonce(clientOperator.address)),
-            gas: 210000,
-            value: 0,
-            data: data,
-            validUntilTime: Math.round(Date.now()/1000 - 1000)
-        };
-        const signature = await endUser._signTypedData(
-            domain,
-            types,
-            message
-        );
-        await expect(forwarder.connect(clientOperator).execute(
-            message,
-            domainHash,
-            requestTypeHash,
-            suffixData,
-            signature
-        )).to.be.revertedWith('FWD: request expired');
-    });
 })

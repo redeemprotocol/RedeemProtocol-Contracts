@@ -1,8 +1,7 @@
 import { expect } from "chai";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
-import { ethers, waffle, network } from "hardhat";
+import { ethers } from "hardhat";
 import { defaultAbiCoder } from "@ethersproject/abi";
-const { provider } = waffle;
 import { RedeemProtocolFactory, RedeemProtocolRealm } from "../typechain-types";
 import * as RPRByte from "../artifacts/contracts/RedeemProtocolRealm.sol/RedeemProtocolRealm.json";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
@@ -13,6 +12,12 @@ import { erc20 } from "../typechain-types/@openzeppelin/contracts/token";
 
 describe("RedeemProtocolRealm", function () {
   const zeroBytes32 = ethers.utils.defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('')]);
+  let chainId: number;
+
+  this.beforeAll(async () => {
+    chainId = (await ethers.provider.getNetwork()).chainId;
+  })
+
   function getPermitData(
     owner: string,
     spender: string,
@@ -26,7 +31,7 @@ describe("RedeemProtocolRealm", function () {
       domain: {
         name: name,
         version: '1',
-        chainId: provider.network.chainId,
+        chainId: chainId,
         verifyingContract: contractAddr,
       },
       message: {
@@ -58,7 +63,7 @@ describe("RedeemProtocolRealm", function () {
       domain: {
         name: 'MinimalForwarder',
         version: '0.0.1',
-        chainId: provider.network.chainId,
+        chainId: chainId,
         verifyingContract: contractAddr,
       },
       message: {
@@ -129,7 +134,7 @@ describe("RedeemProtocolRealm", function () {
         token: erc20.address
       }
     );
-    const salt = ethers.utils.defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
+    const salt = ethers.utils.defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, chainId, 0]);
     const create2Address = ethers.utils.getCreate2Address(
       factory.address,
       ethers.utils.keccak256(salt),
@@ -171,7 +176,7 @@ describe("RedeemProtocolRealm", function () {
     );
     await erc20A.mint(realmOp.address, ethers.utils.parseEther("0.1"));
     await erc20A.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), realmOp.address);
+    await factory.grantRole(ethers.utils.id("REALM_CREATOR"), realmOp.address);
     const realm = await createRealm(
       factory, realmOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 0, "0.005", "0.01", "0.001",
     );
@@ -287,7 +292,7 @@ describe("RedeemProtocolRealm", function () {
     );
     await erc20A.mint(realmOp.address, ethers.utils.parseEther("0.1"));
     await erc20A.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), realmOp.address);
+    await factory.grantRole(ethers.utils.id("REALM_CREATOR"), realmOp.address);
     const realm = await createRealm(
       factory, realmOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 0, "0.005", "0.01", "0.001",
     );
@@ -324,7 +329,7 @@ describe("RedeemProtocolRealm", function () {
     );
     await erc20A.mint(realmOp.address, ethers.utils.parseEther("0.1"));
     await erc20A.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), realmOp.address);
+    await factory.grantRole(ethers.utils.id("REALM_CREATOR"), realmOp.address);
     const realm = await createRealm(
       factory, realmOp, receiver.address, forwarder.address, erc20A, 1, "0.005", "0.01", "0.001",
     );
@@ -359,7 +364,7 @@ describe("RedeemProtocolRealm", function () {
     );
     await erc20A.mint(realmOp.address, ethers.utils.parseEther("0.1"));
     await erc20A.connect(realmOp).approve(factory.address, ethers.utils.parseEther("0.1"));
-    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), realmOp.address);
+    await factory.grantRole(ethers.utils.id("REALM_CREATOR"), realmOp.address);
     const realm = await createRealm(
       factory, realmOp, ethers.constants.AddressZero, ethers.constants.AddressZero, erc20A, 2, "0.005", "0.01", "0.001",
     );

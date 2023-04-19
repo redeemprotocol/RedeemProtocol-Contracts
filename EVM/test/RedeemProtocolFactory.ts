@@ -2,15 +2,20 @@ import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect } from "chai";
 import { BigNumberish } from "ethers";
-import { ethers, waffle } from "hardhat";
+import { ethers } from "hardhat";
 import RedeemProtocolRealm from "../artifacts/contracts/RedeemProtocolRealm.sol/RedeemProtocolRealm.json";
 import { RedeemProtocolFactory } from "../typechain-types";
 import { defaultAbiCoder } from "@ethersproject/abi";
-const { provider } = waffle;
 import { RPC20 } from "../typechain-types/contracts/test";
 
-describe("RedeemProtocolFactory", function() {
+describe("RedeemProtocolFactory", function () {
   const zeroBytes32 = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(""));
+  let chainId: number;
+
+  this.beforeAll(async () => {
+    chainId = (await ethers.provider.getNetwork()).chainId;
+  })
+
   function getPermitData(
     owner: string,
     spender: string,
@@ -24,7 +29,7 @@ describe("RedeemProtocolFactory", function() {
       domain: {
         name: name,
         version: '1',
-        chainId: provider.network.chainId,
+        chainId: chainId,
         verifyingContract: contractAddr,
       },
       message: {
@@ -96,7 +101,7 @@ describe("RedeemProtocolFactory", function() {
       feeReceiver.address,
     );
     await factory.grantRole(ethers.utils.id("OPERATOR"), op.address);
-    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), realmOp.address);
+    await factory.grantRole(ethers.utils.id("REALM_CREATOR"), realmOp.address);
     await factory.grantRole(ethers.utils.id("ROOT_CREATOR"), rootCreator.address);
 
     return { factory, admin, op, realmOp, otherAccount, rootCreator, erc20A, erc20B, erc721A, erc721B };
@@ -125,7 +130,7 @@ describe("RedeemProtocolFactory", function() {
       feeReceiver.address,
     );
     await factory.grantRole(ethers.utils.id("OPERATOR"), op.address);
-    await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), realmOp.address);
+    await factory.grantRole(ethers.utils.id("REALM_CREATOR"), realmOp.address);
 
     return { factory, admin, op, realmOp, otherAccount, erc20, erc721 };
   }
@@ -152,9 +157,9 @@ describe("RedeemProtocolFactory", function() {
       expect(await factory.getRoleAdmin(ethers.utils.id("OPERATOR"))).to.equal(ethers.utils.id("ADMIN"));
     });
 
-    it("should have REVERSE_CREATOR role admin for OPERATOR", async function () {
+    it("should have REALM_CREATOR role admin for OPERATOR", async function () {
       const { factory } = await loadFixture(deployFactory);
-      expect(await factory.getRoleAdmin(ethers.utils.id("REVERSE_CREATOR"))).to.equal(ethers.utils.id("OPERATOR"));
+      expect(await factory.getRoleAdmin(ethers.utils.id("REALM_CREATOR"))).to.equal(ethers.utils.id("OPERATOR"));
     });
 
     it("should not have ADMIN role for other account", async function () {
@@ -167,9 +172,9 @@ describe("RedeemProtocolFactory", function() {
       expect(await factory.hasRole(ethers.utils.id("OPERATOR"), otherAccount.address)).to.be.false;
     });
 
-    it("should not have REVERSE_CREATOR role for other account", async function() {
+    it("should not have REALM_CREATOR role for other account", async function () {
       const { factory, otherAccount } = await loadFixture(deployFactory);
-      expect(await factory.hasRole(ethers.utils.id("REVERSE_CREATOR"), otherAccount.address)).to.be.false;
+      expect(await factory.hasRole(ethers.utils.id("REALM_CREATOR"), otherAccount.address)).to.be.false;
     });
 
     it("should be able to grant ADMIN role to other account from ADMIN", async function () {
@@ -184,10 +189,10 @@ describe("RedeemProtocolFactory", function() {
       expect(await factory.hasRole(ethers.utils.id("OPERATOR"), otherAccount.address)).to.be.true;
     });
 
-    it("should be able to grant REVERSE_CREATOR role to other account from ADMIN", async function () {
+    it("should be able to grant REALM_CREATOR role to other account from ADMIN", async function () {
       const { factory, otherAccount } = await loadFixture(deployFactory);
-      await factory.grantRole(ethers.utils.id("REVERSE_CREATOR"), otherAccount.address);
-      expect(await factory.hasRole(ethers.utils.id("REVERSE_CREATOR"), otherAccount.address)).to.be.true;
+      await factory.grantRole(ethers.utils.id("REALM_CREATOR"), otherAccount.address);
+      expect(await factory.hasRole(ethers.utils.id("REALM_CREATOR"), otherAccount.address)).to.be.true;
     });
 
     it("should be able to grant ROOT_CREATOR role to other account from ADMIN", async function () {
@@ -203,9 +208,9 @@ describe("RedeemProtocolFactory", function() {
       );
     });
 
-    it("should not be able to grant REVERSE_CREATOR role to other account from non ADMIN", async function() {
+    it("should not be able to grant REALM_CREATOR role to other account from non ADMIN", async function () {
       const { factory, otherAccount, otherAccount2 } = await loadFixture(deployFactory);
-      await expect(factory.connect(otherAccount).grantRole(ethers.utils.id("REVERSE_CREATOR"), otherAccount2.address)).to.be.revertedWith(
+      await expect(factory.connect(otherAccount).grantRole(ethers.utils.id("REALM_CREATOR"), otherAccount2.address)).to.be.revertedWith(
         `AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("OPERATOR")}`
       );
     });
@@ -256,7 +261,7 @@ describe("RedeemProtocolFactory", function() {
           token: erc20.address
         }
       );
-      const salt = ethers.utils.defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
+      const salt = ethers.utils.defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, chainId, 0]);
       const create2Address = ethers.utils.getCreate2Address(
         factory.address,
         ethers.utils.keccak256(salt),
@@ -327,7 +332,7 @@ describe("RedeemProtocolFactory", function() {
       await createRealm(factory, rootCreator, otherAccount.address, ethers.constants.AddressZero, erc20A, 1);
     });
 
-    it("should create successfully with non REVERSE_CREATOR when not approved only", async function () {
+    it("should create successfully with non REALM_CREATOR when not approved only", async function () {
       const { factory, otherAccount, erc20A } = await loadFixture(deployFactoryWithRole);
       await factory.flipApprovedOnly();
       await erc20A.mint(otherAccount.address, ethers.utils.parseEther("0.1"));
@@ -369,7 +374,7 @@ describe("RedeemProtocolFactory", function() {
           token: erc20A.address
         }
       );
-      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
+      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, chainId, 0]);
       const create2Address = ethers.utils.getCreate2Address(
         factory.address,
         ethers.utils.keccak256(salt),
@@ -402,7 +407,7 @@ describe("RedeemProtocolFactory", function() {
           token: erc20A.address
         }
       );
-      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
+      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, chainId, 0]);
       const create2Address = ethers.utils.getCreate2Address(
         factory.address,
         ethers.utils.keccak256(salt),
@@ -441,7 +446,7 @@ describe("RedeemProtocolFactory", function() {
           token: erc20B.address
         }
       );
-      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
+      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, chainId, 0]);
       const create2Address = ethers.utils.getCreate2Address(
         factory.address,
         ethers.utils.keccak256(salt),
@@ -477,7 +482,7 @@ describe("RedeemProtocolFactory", function() {
           token: erc20A.address
         }
       );
-      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
+      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, chainId, 0]);
       const create2Address = ethers.utils.getCreate2Address(
         factory.address,
         ethers.utils.keccak256(salt),
@@ -684,7 +689,7 @@ describe("RedeemProtocolFactory", function() {
         ]
       ).slice(2);
       const initCode = ethers.utils.keccak256(`${RedeemProtocolRealm.bytecode}${encoded}`);
-      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
+      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, chainId, 0]);
       const create2Address = ethers.utils.getCreate2Address(
         factory.address,
         ethers.utils.keccak256(salt),
@@ -780,7 +785,7 @@ describe("RedeemProtocolFactory", function() {
       const { factory, op, realmOp, erc20A } = await loadFixture(deployFactoryWithRole);
       const realmAddr = await createRealm(factory, realmOp, erc20A);
       await expect(factory.connect(op).setRedeemAmount(realmAddr, ethers.utils.parseEther("0.0009")))
-        .to.be.revertedWith("redeemAmount must be greater than baseRedeemFee");
+        .to.be.revertedWith("Realm: redeemAmount must be greater than baseRedeemFee");
     });
   });
 
@@ -806,7 +811,7 @@ describe("RedeemProtocolFactory", function() {
         ]
       ).slice(2);
       const initCode = ethers.utils.keccak256(`${RedeemProtocolRealm.bytecode}${encoded}`);
-      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, provider.network.chainId, 0]);
+      const salt = defaultAbiCoder.encode(['address', 'uint256', 'uint256'], [realmOp.address, chainId, 0]);
       const create2Address = ethers.utils.getCreate2Address(
         factory.address,
         ethers.utils.keccak256(salt),
@@ -869,13 +874,13 @@ describe("RedeemProtocolFactory", function() {
       const { factory, otherAccount, erc20A } = await loadFixture(deployFactoryWithRole);
       await erc20A.mint(factory.address, ethers.utils.parseEther("0.99"));
       await expect(factory.withdraw(erc20A.address, ethers.utils.parseEther("1"), otherAccount.address))
-          .to.be.revertedWith("not enough balance");
+        .to.be.revertedWith("not enough balance");
     });
 
     it("withdraw should be reverted when not ADMIN role", async function () {
       const { factory, otherAccount, erc20A } = await loadFixture(deployFactoryWithRole);
       await expect(factory.connect(otherAccount).withdraw(erc20A.address, ethers.utils.parseEther("1"), otherAccount.address))
-          .to.be.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("ADMIN")}`);
+        .to.be.revertedWith(`AccessControl: account ${otherAccount.address.toLowerCase()} is missing role ${ethers.utils.id("ADMIN")}`);
     });
 
     it("setFeeReceiver should success", async function () {
