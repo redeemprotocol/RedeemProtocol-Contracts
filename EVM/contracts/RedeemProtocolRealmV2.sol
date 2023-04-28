@@ -31,6 +31,21 @@ contract RedeemProtocolRealmV2 is AccessControl, ReentrancyGuard, ERC2771Context
     RedeemProtocolType.RedeemMethod public redeemMethod;
     address public tokenReceiver;
 
+    event Redeem(
+        address indexed _operator,
+        uint256 indexed _tokenId,
+        address redeemer,
+        bytes32 _redemptionId,
+        string _memo
+    );
+
+    event Cancel(
+        address indexed _operator,
+        uint256 indexed _tokenId,
+        bytes32 _redemptionId,
+        string _memo
+    );
+
     event Updated(
         uint256 indexed redeemAmount,
         RedeemProtocolType.RedeemMethod indexed redeemMethod,
@@ -59,7 +74,6 @@ contract RedeemProtocolRealmV2 is AccessControl, ReentrancyGuard, ERC2771Context
         _;
     }
 
-    // NOTE: redeem fee also support meta tx?
     function redeemWithMark(
         address _contractAddr,
         uint256 _tokenId,
@@ -85,6 +99,7 @@ contract RedeemProtocolRealmV2 is AccessControl, ReentrancyGuard, ERC2771Context
         ok = IERC20(baseRedeemFee.token).transfer(RedeemProtocolFactory(factory).feeReceiver(), baseRedeemFee.amount);
         require(ok, "base redeem fee payment failed");
         IERC6672(_contractAddr).redeem(_redemptionId, _tokenId, "Redeem With Mark");
+        emit Redeem(address(this), _tokenId, _msgSender(), _redemptionId, "Redeem With Mark");
     }
 
     function redeemWithTransfer(
@@ -113,6 +128,7 @@ contract RedeemProtocolRealmV2 is AccessControl, ReentrancyGuard, ERC2771Context
 
         IERC721(_contractAddr).safeTransferFrom(_msgSender(), tokenReceiver, _tokenId);
         IERC6672(_contractAddr).redeem(_redemptionId, _tokenId, "Redeem With Transfer");
+        emit Redeem(address(this), _tokenId, _msgSender(), _redemptionId, "Redeem With Transfer");
     }
 
     function redeemWithBurn(
@@ -141,6 +157,7 @@ contract RedeemProtocolRealmV2 is AccessControl, ReentrancyGuard, ERC2771Context
 
         IERC721Burnable(_contractAddr).burn(_tokenId);
         IERC6672(_contractAddr).redeem(_redemptionId, _tokenId, "Redeem With Burn");
+        emit Redeem(address(this), _tokenId, _msgSender(), _redemptionId, "Redeem With Burn");
     }
 
     function updateRealm(

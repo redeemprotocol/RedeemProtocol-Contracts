@@ -61,8 +61,8 @@ describe("RedeemProtocolRealm", function () {
   ) {
     return {
       domain: {
-        name: 'MinimalForwarder',
-        version: '0.0.1',
+        name: 'RedeemSystemForwarder',
+        version: '1.0.0',
         chainId: chainId,
         verifyingContract: contractAddr,
       },
@@ -309,7 +309,7 @@ describe("RedeemProtocolRealm", function () {
     const erc721Factory = await ethers.getContractFactory("RPC721");
     const erc721A = await erc721Factory.deploy();
     const erc721B = await erc721Factory.deploy();
-    const FF = await ethers.getContractFactory("MinimalForwarder");
+    const FF = await ethers.getContractFactory("RedeemSystemForwarder");
     const forwarder = await FF.deploy();
     const Factory = await ethers.getContractFactory("RedeemProtocolFactory");
     const factory = await Factory.deploy(
@@ -510,7 +510,7 @@ describe("RedeemProtocolRealm", function () {
 
       await expect(realm.connect(otherAccount).redeemWithMark(
         erc721A.address, 0, zeroBytes32, 0, 0, zeroBytes32, zeroBytes32,
-      )).to.be.revertedWith("token has been redeemed");
+      )).to.be.revertedWith("Realm: token has been redeemed");
     });
 
     it("should be success with different custom id", async function () {
@@ -723,7 +723,7 @@ describe("RedeemProtocolRealm", function () {
       await expect(realm.connect(realmOp).updateRealm(
         1, ethers.utils.parseEther("1"), ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32,
-      )).to.be.revertedWith("tokenReceiver must be set");
+      )).to.be.revertedWith("Realm: tokenReceiver must be set");
     });
 
     it("should be reverted when redeem amount less than base redeem fee", async function () {
@@ -731,7 +731,7 @@ describe("RedeemProtocolRealm", function () {
       await expect(updateRealm(
         realm, realmOp, 0, "0.0009", erc20A, ethers.constants.AddressZero,
         0, 0, zeroBytes32, zeroBytes32, "0.99", feeReceiver.address,
-      )).to.be.revertedWith("redeemAmount must be greater than baseRedeemFee");
+      )).to.be.revertedWith("Realm: redeemAmount must be greater than baseRedeemFee");
     });
   });
 
