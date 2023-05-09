@@ -1,11 +1,10 @@
 import { task, types } from "hardhat/config";
 import { defaultAbiCoder } from "@ethersproject/abi";
 import dotenv from 'dotenv';
-import { token } from "../typechain-types/@openzeppelin/contracts";
 
 dotenv.config();
 
-const domainName = "RedeemSystemForwarder";
+const domainName = "PassportForwarder";
 const domainVersion = "1.0.0";
 const forwarderTypes = {
     ForwardRequest: [
@@ -59,14 +58,14 @@ task("deployForwarder", "Deploy Forwarder").setAction(
                 _,
                 redeemSystemOperator
             ] = await ethers.getSigners();
-            const Factory = await ethers.getContractFactory("RedeemSystemForwarder");
+            const Factory = await ethers.getContractFactory("PassportForwarder");
             const forwarder = await Factory.connect(redeemSystemOperator).deploy();
             await forwarder.deployed();
             const register = await forwarder.connect(redeemSystemOperator).registerDomainSeparator(domainName, domainVersion);
             const receipt = await register.wait();
             const domainSeparatorEvent = receipt.events?.filter((x) => { return x.event == "DomainRegistered" })[0];
             const domainHash = domainSeparatorEvent?.args?.domainSeparator;
-            console.log("RedeemSystemForwarder deployed:", forwarder.address);
+            console.log("PassportForwarder deployed:", forwarder.address);
             console.log("domainHash:", domainHash);
             return forwarder.address;
         } catch (message) {
@@ -293,7 +292,7 @@ task("redeemWithMark", "Redeem with mark via Forwarder")
         ]);
         const zeroBytes32 = ethers.utils.defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('')]);
         try {
-            const forwarder = await ethers.getContractAt("RedeemSystemForwarder", forwarderAddress)
+            const forwarder = await ethers.getContractAt("PassportForwarder", forwarderAddress)
             const domain = {
                 name: domainName,
                 version: domainVersion,
@@ -355,7 +354,7 @@ task("registerDomain", "Register domain separator")
     }, { ethers, run }) => {
         const [_, redeemSystemOperator] = await ethers.getSigners();
         try {
-            const forwarder = await ethers.getContractAt("RedeemSystemForwarder", forwarderAddress);
+            const forwarder = await ethers.getContractAt("PassportForwarder", forwarderAddress);
             const register = await forwarder.connect(redeemSystemOperator).registerDomainSeparator(domainName, domainVersion);
             const receipt = await register.wait();
             const domainSeparatorEvent = receipt.events?.filter((x) => { return x.event == "DomainRegistered" })[0];

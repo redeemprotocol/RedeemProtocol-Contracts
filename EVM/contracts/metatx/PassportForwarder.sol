@@ -15,7 +15,7 @@ import "./interfaces/IForwarder.sol";
  * @title The Forwarder Implementation
  * @notice This implementation of the `IForwarder` interface uses ERC-712 signatures and stored nonces for verification.
  */
-contract RedeemSystemForwarder is IForwarder, ERC165, AccessControl {
+contract PassportForwarder is IForwarder, ERC165, AccessControl {
     bytes32 public constant ADMIN = keccak256("ADMIN");
 
     using ECDSA for bytes32;
