@@ -16,7 +16,6 @@ describe("RedeemSystemForwarder", function () {
         "function redeemWithMark(address _contractAddress, uint256 _tokenId, bytes32 _customId, uint _deadline, uint8 _v, bytes32 _r, bytes32 _s)"
     ]);
     const tokenId = 0;
-    const customId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('mock-custom-id')]);
     const types = {
         ForwardRequest: [
             { name: "from", type: "address" },
@@ -216,6 +215,7 @@ describe("RedeemSystemForwarder", function () {
 
     describe("Redeem", () => {
         it("Should redeem with mark successfully via forwarder", async () => {
+            const customId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('test01')]);
             const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
                 nft.address,
                 tokenId,
@@ -255,6 +255,7 @@ describe("RedeemSystemForwarder", function () {
         });
 
         it("Should revert with the right error if request is expired", async () => {
+            const customId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('test01')]);
             const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
                 nft.address,
                 tokenId,
@@ -285,6 +286,185 @@ describe("RedeemSystemForwarder", function () {
                 suffixData,
                 signature
             )).to.be.revertedWith('FWD: request expired');
+            expect(await feeToken.balanceOf(realm.address)).to.equal(0);
+            expect(await feeToken.balanceOf(forwarder.address)).to.equal(0);
+            expect(await feeToken.balanceOf(feeReceiver.address)).to.equal(setupFee);
         });
-    })
+
+        it("Should redeem with mark successfully via forwarder twice with same custom id", async () => {
+            const customId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('test01')]);
+            const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
+                nft.address,
+                tokenId,
+                customId,
+                0,
+                0,
+                zeroBytes32,
+                zeroBytes32
+            ]);
+            const message = {
+                from: endUser.address,
+                to: realm.address,
+                nonce: Number(await forwarder.connect(endUser).getNonce(endUser.address)),
+                gas: 210000,
+                value: 0,
+                data: data,
+                validUntilTime: Math.round(Date.now() / 1000 + 30000)
+            };
+            const signature = await endUser._signTypedData(
+                domain,
+                types,
+                message
+            );
+            const transaction = await forwarder.connect(clientOperator).execute(
+                message,
+                domainHash,
+                requestTypeHash,
+                suffixData,
+                signature
+            );
+            await transaction.wait();
+            const isRedeemable = await realm.isRedeemable(nft.address, tokenId, customId);
+            const message2 = {
+                from: endUser.address,
+                to: realm.address,
+                nonce: Number(await forwarder.connect(endUser).getNonce(endUser.address)),
+                gas: 210000,
+                value: 0,
+                data: data,
+                validUntilTime: Math.round(Date.now() / 1000 + 30000)
+            };
+            const signature2 = await endUser._signTypedData(
+                domain,
+                types,
+                message2
+            );
+            const transaction2 = forwarder.connect(clientOperator).execute(
+                message2,
+                domainHash,
+                requestTypeHash,
+                suffixData,
+                signature2
+            );
+            expect(isRedeemable).to.be.false;
+            await expect(transaction2).to.be.revertedWith("FWD: send transaction failed");
+            expect(await feeToken.balanceOf(realm.address)).to.equal(realmRedeemFee.sub(redeemFee));
+            expect(await feeToken.balanceOf(forwarder.address)).to.equal(0);
+            expect(await feeToken.balanceOf(feeReceiver.address)).to.equal(setupFee.add(redeemFee));
+        });
+
+        it("Should redeem with mark successfully via forwarder twice", async () => {
+            const customId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('test01')]);
+            const customId2 = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('test02')]);
+            const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
+                nft.address,
+                tokenId,
+                customId,
+                0,
+                0,
+                zeroBytes32,
+                zeroBytes32
+            ]);
+            const message = {
+                from: endUser.address,
+                to: realm.address,
+                nonce: Number(await forwarder.connect(endUser).getNonce(endUser.address)),
+                gas: 210000,
+                value: 0,
+                data: data,
+                validUntilTime: Math.round(Date.now() / 1000 + 30000)
+            };
+            const signature = await endUser._signTypedData(
+                domain,
+                types,
+                message
+            );
+            const transaction = await forwarder.connect(clientOperator).execute(
+                message,
+                domainHash,
+                requestTypeHash,
+                suffixData,
+                signature
+            );
+            await transaction.wait();
+            const data2 = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
+                nft.address,
+                tokenId,
+                customId2,
+                0,
+                0,
+                zeroBytes32,
+                zeroBytes32
+            ]);
+            const message2 = {
+                from: endUser.address,
+                to: realm.address,
+                nonce: Number(await forwarder.connect(endUser).getNonce(endUser.address)),
+                gas: 210000,
+                value: 0,
+                data: data2,
+                validUntilTime: Math.round(Date.now() / 1000 + 30000)
+            };
+            const signature2 = await endUser._signTypedData(
+                domain,
+                types,
+                message2
+            );
+            const transaction2 = await forwarder.connect(clientOperator).execute(
+                message2,
+                domainHash,
+                requestTypeHash,
+                suffixData,
+                signature2
+            );
+            await transaction2.wait();
+            const isRedeemable = await realm.isRedeemable(nft.address, tokenId, customId);
+            const isRedeemable2 = await realm.isRedeemable(nft.address, tokenId, customId2);
+            expect(isRedeemable).to.be.false;
+            expect(isRedeemable2).to.be.false;
+            expect(await feeToken.balanceOf(realm.address)).to.equal((realmRedeemFee.sub(redeemFee)).mul(2));
+            expect(await feeToken.balanceOf(forwarder.address)).to.equal(0);
+            expect(await feeToken.balanceOf(feeReceiver.address)).to.equal(setupFee.add(redeemFee.mul(2)));
+        });
+
+        it("Should withdraw the tokens from forwarder", async () => {
+            const balance = await feeToken.balanceOf(clientOperator.address);
+            const amount = ethers.utils.parseEther("1");
+            const transaction = await feeToken.connect(clientOperator).transfer(forwarder.address, amount);
+            await transaction.wait();
+            expect(await feeToken.balanceOf(clientOperator.address)).to.equal(balance.sub(amount));
+            expect(await feeToken.balanceOf(forwarder.address)).to.equal(amount);
+            const withdraw = await forwarder.connect(redeemSystemOperator).withdraw(feeToken.address, clientOperator.address, amount);
+            await withdraw.wait();
+            expect(await feeToken.balanceOf(clientOperator.address)).to.equal(balance);
+            expect(await feeToken.balanceOf(forwarder.address)).to.equal(0);
+        });
+
+        it("Other accounts should not have permisson to withdraw forwarder's token", async () => {
+            const role = "0xdf8b4c520ffe197c5343c6f5aec59570151ef9a492f2c624fd45ddde6135ec42";
+            await expect(forwarder.connect(clientOperator).withdraw(feeToken.address, clientOperator.address, "1"))
+                .to.be.revertedWith(`AccessControl: account ${clientOperator.address.toLocaleLowerCase()} is missing role ${role}`)
+            await expect(forwarder.connect(endUser).withdraw(feeToken.address, clientOperator.address, "1"))
+                .to.be.revertedWith(`AccessControl: account ${endUser.address.toLocaleLowerCase()} is missing role ${role}`)
+            await expect(forwarder.connect(redeemProtocolOperator).withdraw(feeToken.address, clientOperator.address, "1"))
+                .to.be.revertedWith(`AccessControl: account ${redeemProtocolOperator.address.toLocaleLowerCase()} is missing role ${role}`)
+        })
+
+        it("Should withdraw Eth from forwader", async () => {
+            const value = ethers.utils.parseEther("1");
+            const balance = await clientOperator.getBalance();
+            const transaction = await clientOperator.sendTransaction({
+                to: forwarder.address,
+                value: value
+            });
+            const receipt = await transaction.wait();
+            const gasFee = receipt.gasUsed.mul(receipt.effectiveGasPrice);
+            expect(await clientOperator.getBalance()).to.equal(balance.sub(gasFee).sub(value));
+            expect(await forwarder.provider.getBalance(forwarder.address)).to.equal(value);
+            const withdraw = await forwarder.connect(redeemSystemOperator).withdrawETH(clientOperator.address, value);
+            await withdraw.wait();
+            expect(await clientOperator.getBalance()).to.equal(balance.sub(gasFee));
+            expect(await forwarder.provider.getBalance(forwarder.address)).to.equal(0);
+        });
+    });
 })

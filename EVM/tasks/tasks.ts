@@ -236,13 +236,13 @@ task("mintFeeToken", "Mint fee token to address")
     .addParam("contractAddress", "Token addresss", undefined, types.string)
     .addParam("receiver", "Receiver address", undefined, types.string)
     .setAction(async ({
-        tokenAddress, receiver
+        contractAddress, receiver
     }: {
-        tokenAddress: string, receiver: string
+        contractAddress: string, receiver: string
     }, { ethers, run }) => {
         const [redeemProtocolOperator] = await ethers.getSigners();
         try {
-            const feeToken = await ethers.getContractAt("RPC20", tokenAddress);
+            const feeToken = await ethers.getContractAt("RPC20", contractAddress);
             await feeToken.connect(redeemProtocolOperator).mint(receiver, ethers.utils.parseEther("100"));
             console.log(`Send $100 RPC to: ${receiver}`);
         } catch (message) {
@@ -309,10 +309,11 @@ task("redeemWithMark", "Redeem with mark via Forwarder")
                 zeroBytes32,
                 zeroBytes32
             ]);
+            const nonce = Number(await forwarder.connect(redeemProtocolOperator).getNonce(redeemProtocolOperator.address));
             const message = {
                 from: redeemProtocolOperator.address,
                 to: realmAddress,
-                nonce: Number(await forwarder.connect(clientOperator).getNonce(clientOperator.address)),
+                nonce: nonce,
                 gas: 210000,
                 value: 0,
                 data: data,
@@ -333,6 +334,7 @@ task("redeemWithMark", "Redeem with mark via Forwarder")
             const receipt = await transaction.wait();
             const redeemEvent = receipt.events?.filter((x) => { return x.event == "Redeemed" })[0];
             console.log("Redeem successfully:", receipt.transactionHash);
+            console.log('redeemEvent:', redeemEvent);
             console.log("contract addres:", redeemEvent?.args?.contractAddress);
             console.log("token id:", redeemEvent?.args?.tokenId);
             console.log("redeem method:", redeemEvent?.args?.redeemMethod);

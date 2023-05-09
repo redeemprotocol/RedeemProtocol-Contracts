@@ -4,6 +4,7 @@ pragma abicoder v2;
 // solhint-disable not-rely-on-time
 // SPDX-License-Identifier: GPL-3.0-only
 
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -14,7 +15,9 @@ import "./interfaces/IForwarder.sol";
  * @title The Forwarder Implementation
  * @notice This implementation of the `IForwarder` interface uses ERC-712 signatures and stored nonces for verification.
  */
-contract RedeemSystemForwarder is IForwarder, ERC165 {
+contract RedeemSystemForwarder is IForwarder, ERC165, AccessControl {
+    bytes32 public constant ADMIN = keccak256("ADMIN");
+
     using ECDSA for bytes32;
 
     address private constant DRY_RUN_ADDRESS =
@@ -45,14 +48,17 @@ contract RedeemSystemForwarder is IForwarder, ERC165 {
             abi.encodePacked("ForwardRequest(", GENERIC_PARAMS, ")")
         );
         registerRequestTypeInternal(requestType);
+        _grantRole(ADMIN, msg.sender);
+        _setRoleAdmin(ADMIN, ADMIN);
     }
 
     /// @inheritdoc IERC165
     function supportsInterface(
         bytes4 interfaceId
-    ) public view virtual override(IERC165, ERC165) returns (bool) {
+    ) public view virtual override(IERC165, ERC165, AccessControl) returns (bool) {
         return
             interfaceId == type(IForwarder).interfaceId ||
+            interfaceId == type(AccessControl).interfaceId ||
             super.supportsInterface(interfaceId);
     }
 
@@ -93,7 +99,7 @@ contract RedeemSystemForwarder is IForwarder, ERC165 {
         if (req.value != 0) {
             gasForTransfer = 40000; //buffer in case we need to move eth after the transaction.
         }
-        bytes memory callData = abi.encodePacked(req.data, from);
+        bytes memory callData = abi.encodePacked(req.data, from, suffixData);
         require(
             (gasleft() * 63) / 64 >= gas + gasForTransfer,
             "FWD: insufficient gas"
@@ -129,7 +135,20 @@ contract RedeemSystemForwarder is IForwarder, ERC165 {
             // can't fail: req.from signed (off-chain) the request, so it must be an EOA...
             payable(from).transfer(address(this).balance);
         }
+        require(success, "FWD: send transaction failed");
         return (success, ret);
+    }
+
+    function withdraw(address contractAddress, address receiver, uint256 amount) external onlyRole(ADMIN) {
+        require(IERC20(contractAddress).balanceOf(address(this)) >= amount, "FWD: no enough balance to withdraw.");
+        IERC20(contractAddress).approve(address(this), amount);
+        IERC20(contractAddress).transfer(receiver, amount);
+    }
+
+    function withdrawETH(address receiver, uint256 amount) external onlyRole(ADMIN) {
+        require(address(this).balance >= amount, "FWD: no enough balance to withdraw.");
+        address payable to = payable(receiver);
+        to.transfer(amount);
     }
 
     function _verifyNonce(ForwardRequest calldata req) internal view {
