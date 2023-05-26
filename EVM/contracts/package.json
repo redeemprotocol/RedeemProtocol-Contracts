@@ -1,0 +1,33 @@
+{
+    "author": "Redeem Protocol DAO <official@redreamer.io>",
+    "bugs": {
+        "url": "https://github.com/redeemprotocol/RedeemProtocol-Contracts/issues"
+    },
+    "dependencies": {
+        "@openzeppelin/contracts": "^4.8.1",
+        "dotenv": "^16.0.3"
+    },
+    "files": [
+        "interfaces/*.sol",
+        "tokens/*.sol"
+    ],
+    "devDependencies": {
+        "@nomicfoundation/hardhat-chai-matchers": "^1.0.6",
+        "@nomicfoundation/hardhat-toolbox": "^2.0.1"
+    },
+    "keywords": [
+        "solidity",
+        "ethereum",
+        "smart",
+        "contracts",
+        "RE:DREAMER",
+        "redeem",
+        "RedeemProtocol"
+    ],
+    "homepage": "https://redreamer.io",
+    "license": "MIT",
+    "main": "index.js",
+    "name": "@redeemprotocol/contracts",
+    "repository": "git@github.com:redeemprotocol/RedeemProtocol-Contracts.git",
+    "version": "1.0.6"
+}

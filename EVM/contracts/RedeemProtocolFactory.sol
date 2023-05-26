@@ -5,14 +5,14 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Create2.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
-import { RedeemProtocolType } from "./libraries/RedeemProtocolType.sol";
+import {RedeemProtocolType} from "./libraries/RedeemProtocolType.sol";
 import "./interfaces/IERC20Permit.sol";
 import "./RedeemProtocolRealm.sol";
 
 contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
     using Counters for Counters.Counter;
     using RedeemProtocolType for RedeemProtocolType.Fee;
-    
+
     bytes32 public constant ADMIN = keccak256("ADMIN");
     bytes32 public constant OPERATOR = keccak256("OPERATOR");
     bytes32 public constant ROOT_CREATOR = keccak256("ROOT_CREATOR");
@@ -73,38 +73,62 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
 
         // avoid stack too deep error
         {
-        RedeemProtocolType.Fee memory baseRedeemFee = designateBaseRedeemFee[msg.sender].token == address(0) ? defaultBaseRedeemFee : designateBaseRedeemFee[msg.sender];
-        RedeemProtocolType.Fee memory updateFee = defaultUpdateFee;
-        if (designateUpdateFee[msg.sender].token != address(0)) {
-            updateFee.token = designateUpdateFee[msg.sender].token;
-            updateFee.amount = designateUpdateFee[msg.sender].amount;
+            RedeemProtocolType.Fee
+                memory baseRedeemFee = designateBaseRedeemFee[msg.sender]
+                    .token == address(0)
+                    ? defaultBaseRedeemFee
+                    : designateBaseRedeemFee[msg.sender];
+            RedeemProtocolType.Fee memory updateFee = defaultUpdateFee;
+            if (designateUpdateFee[msg.sender].token != address(0)) {
+                updateFee.token = designateUpdateFee[msg.sender].token;
+                updateFee.amount = designateUpdateFee[msg.sender].amount;
+            }
+            // bytecode must be encoded with abi.encodePacked
+            bytes memory bytecode = abi.encodePacked(
+                type(RedeemProtocolRealm).creationCode,
+                abi.encode(msg.sender, _forwarder, updateFee, baseRedeemFee)
+            );
+            bytes32 salt = keccak256(
+                abi.encode(msg.sender, block.chainid, realmSalt.current())
+            );
+            realmSalt.increment();
+            realm = Create2.deploy(0, salt, bytecode);
         }
-        // bytecode must be encoded with abi.encodePacked
-        bytes memory bytecode = abi.encodePacked(type(RedeemProtocolRealm).creationCode, abi.encode(msg.sender, _forwarder, updateFee, baseRedeemFee));
-        bytes32 salt = keccak256(abi.encode(msg.sender, block.chainid, realmSalt.current()));
-        realmSalt.increment();
-        realm = Create2.deploy(0, salt, bytecode);
-        }
-        RedeemProtocolRealm(realm).initialize(_method, _redeemAmount, _tokenReceiver);
+        RedeemProtocolRealm(realm).initialize(
+            _method,
+            _redeemAmount,
+            _tokenReceiver
+        );
         allRealms.push(realm);
 
         // avoid stack too deep error
         {
-        RedeemProtocolType.Fee memory setupFee = defaultSetupFee;
-        if (designateSetupFee[msg.sender].token != address(0)) {
-            setupFee.token = designateSetupFee[msg.sender].token;
-            setupFee.amount = designateSetupFee[msg.sender].amount;
-        }
+            RedeemProtocolType.Fee memory setupFee = defaultSetupFee;
+            if (designateSetupFee[msg.sender].token != address(0)) {
+                setupFee.token = designateSetupFee[msg.sender].token;
+                setupFee.amount = designateSetupFee[msg.sender].amount;
+            }
 
-        if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0){
-            IERC20Permit(setupFee.token).permit(msg.sender, address(this), setupFee.amount, _deadline, _v, _r, _s);
-        }
-        bool ok = IERC20Permit(setupFee.token).transferFrom(msg.sender, feeReceiver, setupFee.amount);
-        require(ok, "fee payment failed");
+            if (_deadline != 0 && _v != 0 && _r[0] != 0 && _s[0] != 0) {
+                IERC20Permit(setupFee.token).permit(
+                    msg.sender,
+                    address(this),
+                    setupFee.amount,
+                    _deadline,
+                    _v,
+                    _r,
+                    _s
+                );
+            }
+            bool ok = IERC20Permit(setupFee.token).transferFrom(
+                msg.sender,
+                feeReceiver,
+                setupFee.amount
+            );
+            require(ok, "fee payment failed");
         }
         emit RealmCreated(msg.sender, realm);
     }
-
 
     // operator methods
     function flipApprovedOnly() public onlyRole(OPERATOR) {
@@ -112,38 +136,59 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
     }
 
     // NOTE: combine setDefault* as a single function for reducing code size?
-    function setDefaultSetupFee(uint256 _amount, address _token) external onlyRole(OPERATOR) {
+    function setDefaultSetupFee(
+        uint256 _amount,
+        address _token
+    ) external onlyRole(OPERATOR) {
         require(_token != address(0), "invalid token");
         defaultSetupFee.amount = _amount;
         defaultSetupFee.token = _token;
     }
 
-    function setDefaultUpdateFee(uint256 _amount, address _token) external onlyRole(OPERATOR) {
+    function setDefaultUpdateFee(
+        uint256 _amount,
+        address _token
+    ) external onlyRole(OPERATOR) {
         require(_token != address(0), "invalid token");
         defaultUpdateFee.amount = _amount;
         defaultUpdateFee.token = _token;
     }
 
-    function setDefaultBaseRedeemFee(uint256 _amount, address _token) external onlyRole(OPERATOR) {
+    function setDefaultBaseRedeemFee(
+        uint256 _amount,
+        address _token
+    ) external onlyRole(OPERATOR) {
         require(_token != address(0), "invalid token");
         require(validRedeemToken[_token], "not acceptable token");
         defaultBaseRedeemFee.amount = _amount;
         defaultBaseRedeemFee.token = _token;
     }
 
-    function setDesignateSetupFee(address _account, uint256 _amount, address _token) external onlyRole(OPERATOR) {
+    function setDesignateSetupFee(
+        address _account,
+        uint256 _amount,
+        address _token
+    ) external onlyRole(OPERATOR) {
         require(_token != address(0), "invalid token");
         designateSetupFee[_account].amount = _amount;
         designateSetupFee[_account].token = _token;
     }
 
-    function setDesignateUpdateFee(address _account, uint256 _amount, address _token) external onlyRole(OPERATOR) {
+    function setDesignateUpdateFee(
+        address _account,
+        uint256 _amount,
+        address _token
+    ) external onlyRole(OPERATOR) {
         require(_token != address(0), "invalid token");
         designateUpdateFee[_account].amount = _amount;
         designateUpdateFee[_account].token = _token;
     }
 
-    function setDesignateBaseRedeemFee(address _account, uint256 _amount, address _token) external onlyRole(OPERATOR) {
+    function setDesignateBaseRedeemFee(
+        address _account,
+        uint256 _amount,
+        address _token
+    ) external onlyRole(OPERATOR) {
         require(_token != address(0), "invalid token");
         require(validRedeemToken[_token], "not acceptable token");
         designateBaseRedeemFee[_account].amount = _amount;
@@ -156,15 +201,26 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
 
     // realm methods
     // NOTE: can we just manipunate the realm directly?
-    function setUpdateFee(address _realm, uint256 _amount, address _token) external onlyRole(OPERATOR) {
+    function setUpdateFee(
+        address _realm,
+        uint256 _amount,
+        address _token
+    ) external onlyRole(OPERATOR) {
         RedeemProtocolRealm(_realm).setUpdateFee(_amount, _token);
     }
 
-    function setBaseRedeemFee(address _realm, uint256 _amount, address _token) external onlyRole(OPERATOR) {
+    function setBaseRedeemFee(
+        address _realm,
+        uint256 _amount,
+        address _token
+    ) external onlyRole(OPERATOR) {
         RedeemProtocolRealm(_realm).setBaseRedeemFee(_amount, _token);
     }
 
-    function setRedeemAmount(address _realm, uint256 _amount) external onlyRole(OPERATOR) {
+    function setRedeemAmount(
+        address _realm,
+        uint256 _amount
+    ) external onlyRole(OPERATOR) {
         RedeemProtocolRealm(_realm).setRedeemAmount(_amount);
     }
 
@@ -173,8 +229,15 @@ contract RedeemProtocolFactory is AccessControl, ReentrancyGuard {
         RedeemProtocolRealm(_realm).pause();
     }
 
-    function withdraw(address _token, uint256 _amount, address _receiver) external nonReentrant onlyRole(ADMIN) {
-        require(IERC20Permit(_token).balanceOf(address(this)) >= _amount, "not enough balance");
+    function withdraw(
+        address _token,
+        uint256 _amount,
+        address _receiver
+    ) external nonReentrant onlyRole(ADMIN) {
+        require(
+            IERC20Permit(_token).balanceOf(address(this)) >= _amount,
+            "not enough balance"
+        );
         bool ok = IERC20Permit(_token).transfer(_receiver, _amount);
         require(ok, "withdraw failed");
     }

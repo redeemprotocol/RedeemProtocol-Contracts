@@ -32,6 +32,10 @@ const config: HardhatUserConfig = {
     goerli: {
       url: process.env.GOERLI_PROVIDER_URL,
       accounts: accounts
+    },
+    polygon: {
+      url: process.env.POLYGON_PROVIDER_URL,
+      accounts: accounts
     }
   }
 };

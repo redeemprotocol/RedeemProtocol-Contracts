@@ -3,7 +3,7 @@ pragma solidity 0.8.16;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import "./interfaces/IERC6672.sol";
+import "../interfaces/IERC6672.sol";
 
 abstract contract ERC6672 is ERC721, IERC6672 {
     using EnumerableSet for EnumerableSet.Bytes32Set;
@@ -14,8 +14,6 @@ abstract contract ERC6672 is ERC721, IERC6672 {
     mapping(address => mapping(uint256 => mapping(bytes32 => string)))
         public memos;
     mapping(address => mapping(uint256 => EnumerableSet.Bytes32Set)) redemptions;
-
-    constructor() ERC721("Multiple RedeemableNFT", "mrNFT") {}
 
     function isRedeemed(
         address _operator,

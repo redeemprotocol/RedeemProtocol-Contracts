@@ -1,12 +1,12 @@
 import { ethers } from "hardhat";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect } from "chai";
-import { RPC20, RPC721 } from "../typechain-types/contracts/test";
-import { RedeemProtocolFactory, RedeemProtocolRealm, RedeemSystemForwarder } from "../typechain-types";
+import { RPC20, RPC721, RPC6672 } from "../typechain-types/contracts/test";
+import { RedeemProtocolFactory, RedeemProtocolRealm, PassportForwarder } from "../typechain-types";
 import { defaultAbiCoder } from "@ethersproject/abi";
 import { TypedDataDomain } from "ethers";
 
-describe("RedeemSystemForwarder", function () {
+describe("PassportForwarder", function () {
     const zeroBytes32 = ethers.utils.defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('')]);
     const setupFee = ethers.utils.parseEther("0.1");
     const updateFee = ethers.utils.parseEther("0.2");
@@ -41,9 +41,10 @@ describe("RedeemSystemForwarder", function () {
     let clientOperator: SignerWithAddress;
     let endUser: SignerWithAddress;
     let feeToken: RPC20;
-    let forwarder: RedeemSystemForwarder;
+    let forwarder: PassportForwarder;
     let requestTypeHash: string
     let nft: RPC721;
+    let mrNFT: RPC6672;
     let factory: RedeemProtocolFactory;
     let realm: RedeemProtocolRealm;
     let domain: TypedDataDomain;
@@ -68,6 +69,7 @@ describe("RedeemSystemForwarder", function () {
     this.beforeEach(async () => {
         await deployContracts();
         await mintNFT();
+        await mintMrNFT();
         await setUpForwarder();
     });
 
@@ -76,6 +78,7 @@ describe("RedeemSystemForwarder", function () {
         forwarder = (await depolyForwarder(redeemSystemOperator)).forwarder;
         requestTypeHash = (await forwarder.queryFilter(forwarder.filters.RequestTypeRegistered()))[0].args[0];
         nft = (await deployNFT(nftOwner)).nft;
+        mrNFT = (await deployMrNFT(nftOwner)).nft;
         await feeToken.connect(feeTokenOwner).mint(realmOperator.address, ethers.utils.parseEther("1"));
         await feeToken.connect(feeTokenOwner).mint(clientOperator.address, ethers.utils.parseEther("1"));
         await feeToken.connect(feeTokenOwner).mint(nftOwner.address, ethers.utils.parseEther("1"));
@@ -103,16 +106,21 @@ describe("RedeemSystemForwarder", function () {
         await mintTransaction.wait();
     }
 
+    async function mintMrNFT() {
+        const mintTransaction = await mrNFT.connect(nftOwner).safeMint(endUser.address);
+        await mintTransaction.wait();
+    }
+
     async function setUpForwarder() {
         const regitsterDomain = await forwarder.connect(redeemSystemOperator).registerDomainSeparator(
-            "RedeemSystemForwarder",
+            "PassportForwarder",
             "1.0.0"
         );
         const registerDomainReceipt = await regitsterDomain.wait();
         const domainSeparatorEvent = registerDomainReceipt.events?.filter((x) => { return x.event == "DomainRegistered" })[0];
         domainHash = domainSeparatorEvent?.args?.domainSeparator;
         domain = {
-            name: "RedeemSystemForwarder",
+            name: "PassportForwarder",
             version: "1.0.0",
             chainId: (await ethers.provider.getNetwork()).chainId,
             verifyingContract: forwarder.address
@@ -128,7 +136,7 @@ describe("RedeemSystemForwarder", function () {
     }
 
     async function depolyForwarder(owner: SignerWithAddress) {
-        const Factory = await ethers.getContractFactory("RedeemSystemForwarder");
+        const Factory = await ethers.getContractFactory("PassportForwarder");
         const forwarder = await Factory.connect(owner).deploy();
         await forwarder.deployed();
 
@@ -143,7 +151,15 @@ describe("RedeemSystemForwarder", function () {
         return { nft, owner };
     }
 
-    async function deployRealm(owner: SignerWithAddress, factory: RedeemProtocolFactory, forwarder: RedeemSystemForwarder) {
+    async function deployMrNFT(owner: SignerWithAddress) {
+        const Factory = await ethers.getContractFactory("RPC6672");
+        const nft = await Factory.connect(owner).deploy();
+        await nft.deployed();
+
+        return { nft, owner };
+    }
+
+    async function deployRealm(owner: SignerWithAddress, factory: RedeemProtocolFactory, forwarder: PassportForwarder) {
         const transaction = await factory.connect(owner).createRealm(
             0,
             realmRedeemFee,
@@ -465,6 +481,221 @@ describe("RedeemSystemForwarder", function () {
             await withdraw.wait();
             expect(await clientOperator.getBalance()).to.equal(balance.sub(gasFee));
             expect(await forwarder.provider.getBalance(forwarder.address)).to.equal(0);
+        });
+    });
+
+    describe("Redeem 6672", () => {
+        it("Should redeem 6672 with mark successfully via forwarder", async () => {
+            const customId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('test01')]);
+            const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
+                mrNFT.address,
+                tokenId,
+                customId,
+                0,
+                0,
+                zeroBytes32,
+                zeroBytes32
+            ]);
+            const message = {
+                from: endUser.address,
+                to: realm.address,
+                nonce: Number(await forwarder.connect(clientOperator).getNonce(clientOperator.address)),
+                gas: 210000,
+                value: 0,
+                data: data,
+                validUntilTime: Math.round(Date.now() / 1000 + 30000)
+            };
+            const signature = await endUser._signTypedData(
+                domain,
+                types,
+                message
+            );
+            const transaction = await forwarder.connect(clientOperator).execute(
+                message,
+                domainHash,
+                requestTypeHash,
+                suffixData,
+                signature
+            );
+            await transaction.wait();
+            const isRedeemable = await realm.isRedeemable(mrNFT.address, tokenId, customId);
+            expect(isRedeemable).to.be.false;
+            expect(await feeToken.balanceOf(realm.address)).to.equal(realmRedeemFee.sub(redeemFee));
+            expect(await feeToken.balanceOf(forwarder.address)).to.equal(0);
+            expect(await feeToken.balanceOf(feeReceiver.address)).to.equal(redeemFee.add(setupFee));
+        });
+
+        it("Should revert with the right error if request is expired", async () => {
+            const customId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('test01')]);
+            const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
+                mrNFT.address,
+                tokenId,
+                customId,
+                0,
+                0,
+                zeroBytes32,
+                zeroBytes32
+            ]);
+            const message = {
+                from: endUser.address,
+                to: realm.address,
+                nonce: Number(await forwarder.connect(clientOperator).getNonce(clientOperator.address)),
+                gas: 210000,
+                value: 0,
+                data: data,
+                validUntilTime: Math.round(Date.now() / 1000 - 1000)
+            };
+            const signature = await endUser._signTypedData(
+                domain,
+                types,
+                message
+            );
+            await expect(forwarder.connect(clientOperator).execute(
+                message,
+                domainHash,
+                requestTypeHash,
+                suffixData,
+                signature
+            )).to.be.revertedWith('FWD: request expired');
+            expect(await feeToken.balanceOf(realm.address)).to.equal(0);
+            expect(await feeToken.balanceOf(forwarder.address)).to.equal(0);
+            expect(await feeToken.balanceOf(feeReceiver.address)).to.equal(setupFee);
+        });
+
+        it("Should redeem 6672 with mark successfully via forwarder twice with same custom id", async () => {
+            const customId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('test01')]);
+            const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
+                mrNFT.address,
+                tokenId,
+                customId,
+                0,
+                0,
+                zeroBytes32,
+                zeroBytes32
+            ]);
+            const message = {
+                from: endUser.address,
+                to: realm.address,
+                nonce: Number(await forwarder.connect(endUser).getNonce(endUser.address)),
+                gas: 210000,
+                value: 0,
+                data: data,
+                validUntilTime: Math.round(Date.now() / 1000 + 30000)
+            };
+            const signature = await endUser._signTypedData(
+                domain,
+                types,
+                message
+            );
+            const transaction = await forwarder.connect(clientOperator).execute(
+                message,
+                domainHash,
+                requestTypeHash,
+                suffixData,
+                signature
+            );
+            await transaction.wait();
+            const isRedeemable = await realm.isRedeemable(mrNFT.address, tokenId, customId);
+            const message2 = {
+                from: endUser.address,
+                to: realm.address,
+                nonce: Number(await forwarder.connect(endUser).getNonce(endUser.address)),
+                gas: 210000,
+                value: 0,
+                data: data,
+                validUntilTime: Math.round(Date.now() / 1000 + 30000)
+            };
+            const signature2 = await endUser._signTypedData(
+                domain,
+                types,
+                message2
+            );
+            const transaction2 = forwarder.connect(clientOperator).execute(
+                message2,
+                domainHash,
+                requestTypeHash,
+                suffixData,
+                signature2
+            );
+            expect(isRedeemable).to.be.false;
+            await expect(transaction2).to.be.revertedWith("FWD: send transaction failed");
+            expect(await feeToken.balanceOf(realm.address)).to.equal(realmRedeemFee.sub(redeemFee));
+            expect(await feeToken.balanceOf(forwarder.address)).to.equal(0);
+            expect(await feeToken.balanceOf(feeReceiver.address)).to.equal(setupFee.add(redeemFee));
+        });
+
+        it("Should redeem 6672 with mark successfully via forwarder twice", async () => {
+            const customId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('test01')]);
+            const customId2 = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('test02')]);
+            const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
+                mrNFT.address,
+                tokenId,
+                customId,
+                0,
+                0,
+                zeroBytes32,
+                zeroBytes32
+            ]);
+            const message = {
+                from: endUser.address,
+                to: realm.address,
+                nonce: Number(await forwarder.connect(endUser).getNonce(endUser.address)),
+                gas: 210000,
+                value: 0,
+                data: data,
+                validUntilTime: Math.round(Date.now() / 1000 + 30000)
+            };
+            const signature = await endUser._signTypedData(
+                domain,
+                types,
+                message
+            );
+            const transaction = await forwarder.connect(clientOperator).execute(
+                message,
+                domainHash,
+                requestTypeHash,
+                suffixData,
+                signature
+            );
+            await transaction.wait();
+            const data2 = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
+                mrNFT.address,
+                tokenId,
+                customId2,
+                0,
+                0,
+                zeroBytes32,
+                zeroBytes32
+            ]);
+            const message2 = {
+                from: endUser.address,
+                to: realm.address,
+                nonce: Number(await forwarder.connect(endUser).getNonce(endUser.address)),
+                gas: 210000,
+                value: 0,
+                data: data2,
+                validUntilTime: Math.round(Date.now() / 1000 + 30000)
+            };
+            const signature2 = await endUser._signTypedData(
+                domain,
+                types,
+                message2
+            );
+            const transaction2 = await forwarder.connect(clientOperator).execute(
+                message2,
+                domainHash,
+                requestTypeHash,
+                suffixData,
+                signature2
+            );
+            await transaction2.wait();
+            const isRedeemable = await realm.isRedeemable(mrNFT.address, tokenId, customId);
+            const isRedeemable2 = await realm.isRedeemable(mrNFT.address, tokenId, customId2);
+            expect(isRedeemable).to.be.false;
+            expect(isRedeemable2).to.be.false;
+            expect(await feeToken.balanceOf(realm.address)).to.equal((realmRedeemFee.sub(redeemFee)).mul(2));
+            expect(await feeToken.balanceOf(forwarder.address)).to.equal(0);
+            expect(await feeToken.balanceOf(feeReceiver.address)).to.equal(setupFee.add(redeemFee.mul(2)));
         });
     });
 })
