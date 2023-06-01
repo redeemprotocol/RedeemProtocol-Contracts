@@ -308,7 +308,7 @@ describe("PassportForwarder", function () {
         });
 
         it("Should redeem with mark successfully via forwarder twice with same custom id", async () => {
-            const customId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('test01')]);
+            const customId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('')]);
             const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
                 nft.address,
                 tokenId,
@@ -372,6 +372,80 @@ describe("PassportForwarder", function () {
         it("Should redeem with mark successfully via forwarder twice", async () => {
             const customId = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('test01')]);
             const customId2 = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('test02')]);
+            const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
+                nft.address,
+                tokenId,
+                customId,
+                0,
+                0,
+                zeroBytes32,
+                zeroBytes32
+            ]);
+            const message = {
+                from: endUser.address,
+                to: realm.address,
+                nonce: Number(await forwarder.connect(endUser).getNonce(endUser.address)),
+                gas: 210000,
+                value: 0,
+                data: data,
+                validUntilTime: Math.round(Date.now() / 1000 + 30000)
+            };
+            const signature = await endUser._signTypedData(
+                domain,
+                types,
+                message
+            );
+            const transaction = await forwarder.connect(clientOperator).execute(
+                message,
+                domainHash,
+                requestTypeHash,
+                suffixData,
+                signature
+            );
+            await transaction.wait();
+            const data2 = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
+                nft.address,
+                tokenId,
+                customId2,
+                0,
+                0,
+                zeroBytes32,
+                zeroBytes32
+            ]);
+            const message2 = {
+                from: endUser.address,
+                to: realm.address,
+                nonce: Number(await forwarder.connect(endUser).getNonce(endUser.address)),
+                gas: 210000,
+                value: 0,
+                data: data2,
+                validUntilTime: Math.round(Date.now() / 1000 + 30000)
+            };
+            const signature2 = await endUser._signTypedData(
+                domain,
+                types,
+                message2
+            );
+            const transaction2 = await forwarder.connect(clientOperator).execute(
+                message2,
+                domainHash,
+                requestTypeHash,
+                suffixData,
+                signature2
+            );
+            await transaction2.wait();
+            const isRedeemable = await realm.isRedeemable(nft.address, tokenId, customId);
+            const isRedeemable2 = await realm.isRedeemable(nft.address, tokenId, customId2);
+            expect(isRedeemable).to.be.false;
+            expect(isRedeemable2).to.be.false;
+            expect(await feeToken.balanceOf(realm.address)).to.equal((realmRedeemFee.sub(redeemFee)).mul(2));
+            expect(await feeToken.balanceOf(forwarder.address)).to.equal(0);
+            expect(await feeToken.balanceOf(feeReceiver.address)).to.equal(setupFee.add(redeemFee.mul(2)));
+        });
+
+        it("Should redeem with mark successfully via forwarder twice", async () => {
+            const customId = '0x0000000000000000000000000000000000000000000000000000000000000000'
+            const customId2 = '0x0000000000000000000000000000000000000000000000000000000000000001'
             const data = redeemWithMarkABI.encodeFunctionData("redeemWithMark", [
                 nft.address,
                 tokenId,
@@ -640,7 +714,7 @@ describe("PassportForwarder", function () {
                 from: endUser.address,
                 to: realm.address,
                 nonce: Number(await forwarder.connect(endUser).getNonce(endUser.address)),
-                gas: 210000,
+                gas: 210000,    
                 value: 0,
                 data: data,
                 validUntilTime: Math.round(Date.now() / 1000 + 30000)

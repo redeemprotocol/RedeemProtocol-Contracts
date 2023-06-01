@@ -50,6 +50,22 @@ task("deployNFT", "Deploy NFT").setAction(
     }
 );
 
+task("deploy6672", "Deploy 6672").setAction(
+    async (_args, { ethers, run }) => {
+        await run("compile");
+        try {
+            const [redeemProtocolOperator] = await ethers.getSigners();
+            const ERC721Factory = await ethers.getContractFactory("RPC6672");
+            const nft = await ERC721Factory.connect(redeemProtocolOperator).deploy();
+            await nft.deployed();
+            console.log("6672 deployed:", nft.address);
+            return nft.address;
+        } catch (message) {
+            console.error(message);
+        }
+    }
+);
+
 task("deployForwarder", "Deploy Forwarder").setAction(
     async (_args, { ethers, run }) => {
         await run("compile");
@@ -78,7 +94,7 @@ task("deployFactory", "Deploy Factory")
     .addParam("setupFee", "Set up fee amount", "1", types.string)
     .addParam("updateFee", "Update fee amount", "1", types.string)
     .addParam("redeemFee", "Update fee amount", "1", types.string)
-    .addParam("feeTokenAddress", "Fee token address", undefined, types.string)
+    .addParam("feeTokenAddress", "Fee token address", process.env.MUMBAI_FEE_TOKEN, types.string)
     .addParam("feeReceiverAddress", "Fee receiver address", undefined, types.string)
     .setAction(
         async ({
@@ -116,7 +132,7 @@ task("deployFactory", "Deploy Factory")
     );
 
 task("grantRoles", "Grant roles for RedeemSystemOperator")
-    .addParam("factoryAddress", "RedeemProtocolFactory address", undefined, types.string)
+    .addParam("factoryAddress", "RedeemProtocolFactory address", process.env.MUMBAI_FACTORY, types.string)
     .setAction(
         async ({
             factoryAddress
@@ -141,10 +157,10 @@ task("grantRoles", "Grant roles for RedeemSystemOperator")
     );
 
 task("approveTokenFee", "Approve token spender")
-    .addParam("tokenAddress", "Token address", undefined, types.string)
-    .addParam("factory", "Factory address", undefined, types.string)
-    .addParam("forwarder", "Factory address", undefined, types.string)
-    .addParam("amount", "Amount", undefined, types.string)
+    .addParam("tokenAddress", "Token address", process.env.MUMBAI_FEE_TOKEN, types.string)
+    .addParam("factory", "Factory address", process.env.MUMBAI_FACTORY, types.string)
+    .addParam("forwarder", "Factory address", process.env.MUMBAI_FORWARDER, types.string)
+    .addParam("amount", "Amount", '10', types.string)
     .setAction(
         async ({
             tokenAddress, factory, forwarder, amount
@@ -165,11 +181,11 @@ task("approveTokenFee", "Approve token spender")
     )
 
 task("createRealm", "Create realm")
-    .addParam("factoryAddress", "RedeemProtocolFactory address", undefined, types.string)
-    .addParam("redeemMethod", "RedeemMethod: 0 - mark/ 1 - transfer/ 2 - burn", undefined, types.int)
-    .addParam("redeemAmount", "Redeem amount", undefined, types.string)
+    .addParam("factoryAddress", "RedeemProtocolFactory address", process.env.MUMBAI_FACTORY, types.string)
+    .addParam("redeemMethod", "RedeemMethod: 0 - mark/ 1 - transfer/ 2 - burn", 0, types.int)
+    .addParam("redeemAmount", "Redeem amount", '1', types.string)
     .addParam("tokenReceiver", "Redeem with transfer to that address", undefined, types.string, true)
-    .addParam("forwarder", "Forwarder address", undefined, types.string)
+    .addParam("forwarder", "Forwarder address", process.env.MUMBAI_FORWARDER, types.string)
     .setAction(
         async ({
             factoryAddress, redeemMethod, redeemAmount, tokenReceiver, forwarder
@@ -249,7 +265,25 @@ task("mintFeeToken", "Mint fee token to address")
         }
     });
 
-task("mintNFT", "Mint fee token to address")
+task("mint6672", "Mint 6672 to address")
+    .addParam("contractAddress", "Token addresss", undefined, types.string)
+    .addParam("receiver", "Receiver address", undefined, types.string)
+    .setAction(async ({
+        contractAddress, receiver
+    }: {
+        contractAddress: string, receiver: string
+    }, { ethers, run }) => {
+        const [redeemProtocolOperator] = await ethers.getSigners();
+        try {
+            const nft = await ethers.getContractAt("RPC6672", contractAddress);
+            await nft.connect(redeemProtocolOperator).safeMint(receiver);
+            console.log(`Send an NFT to ${receiver}`);
+        } catch (message) {
+            console.error(message);
+        }
+    });
+
+task("mint721", "Mint 721 to address")
     .addParam("contractAddress", "Token addresss", undefined, types.string)
     .addParam("receiver", "Receiver address", undefined, types.string)
     .setAction(async ({
@@ -268,7 +302,7 @@ task("mintNFT", "Mint fee token to address")
     });
 
 task("redeemWithMark", "Redeem with mark via Forwarder")
-    .addParam("forwarderAddress", "Forwarder address", process.env.MUMBAI_REDEEM_SYSTEM_FORWARDER, types.string, true)
+    .addParam("forwarderAddress", "Forwarder address", process.env.MUMBAI_FORWARDER, types.string, true)
     .addParam("realmAddress", "Realm address", process.env.MUMBAI_REALM, types.string, true)
     .addParam("contractAddress", "NFT contract address", process.env.MUMBAI_NFT, types.string, true)
     .addParam("tokenId", "Token id", 0, types.int, true)

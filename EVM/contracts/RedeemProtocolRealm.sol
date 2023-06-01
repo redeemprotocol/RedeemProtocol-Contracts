@@ -22,7 +22,6 @@ contract RedeemProtocolRealm is
 {
     bytes32 public constant ADMIN = keccak256("ADMIN");
     bytes32 public constant OPERATOR = keccak256("OPERATOR");
-    bytes32 private constant DEFAULT_REDEMPTION_ID = "DEFAULT_REDEMPTION_ID";
 
     bytes4 private constant erc721Interface = 0x80ac58cd;
     bytes4 private constant erc6672Interface = 0x4dddf83f;
@@ -51,6 +50,14 @@ contract RedeemProtocolRealm is
         uint256 indexed redeemAmount,
         RedeemProtocolType.RedeemMethod indexed redeemMethod,
         address indexed tokenReceiver
+    );
+
+    event Cancel(
+        address indexed contractAddress,
+        uint256 indexed tokenId,
+        RedeemProtocolType.RedeemMethod indexed redeemMethod,
+        address redeemer,
+        bytes32 redemptionId
     );
 
     constructor(
@@ -96,7 +103,8 @@ contract RedeemProtocolRealm is
                 IERC721(_contractAddress).ownerOf(_tokenId) != address(0),
                 "Realm: Invalid token ID"
             );
-            return isRedeemed[_contractAddress][_tokenId][_redemptionId] == false;
+            return
+                isRedeemed[_contractAddress][_tokenId][_redemptionId] == false;
         }
     }
 
@@ -109,9 +117,6 @@ contract RedeemProtocolRealm is
         bytes32 _r,
         bytes32 _s
     ) external whenNotPaused {
-        if (_redemptionId[0] == 0) {
-            _redemptionId = DEFAULT_REDEMPTION_ID;
-        }
         require(
             redeemMethod == RedeemProtocolType.RedeemMethod.Mark,
             "Realm: method is not mark"
@@ -174,9 +179,6 @@ contract RedeemProtocolRealm is
         bytes32 _r,
         bytes32 _s
     ) external whenNotPaused {
-        if (_redemptionId[0] == 0) {
-            _redemptionId = DEFAULT_REDEMPTION_ID;
-        }
         require(
             redeemMethod == RedeemProtocolType.RedeemMethod.Transfer,
             "Realm: method is not transfer"
@@ -241,9 +243,6 @@ contract RedeemProtocolRealm is
         bytes32 _r,
         bytes32 _s
     ) external whenNotPaused {
-        if (_redemptionId[0] == 0) {
-            _redemptionId = DEFAULT_REDEMPTION_ID;
-        }
         require(
             redeemMethod == RedeemProtocolType.RedeemMethod.Burn,
             "Realm: method is not burn"
@@ -408,6 +407,30 @@ contract RedeemProtocolRealm is
             "Realm: redeemAmount must be greater than baseRedeemFee"
         );
         redeemAmount = _amount;
+    }
+
+    function editRedemption(
+        address _contractAddress,
+        uint256 _tokenId,
+        bytes32 _redemptionId,
+        bool _isRedeemed
+    ) external onlyRole(OPERATOR) {
+        isRedeemed[_contractAddress][_tokenId][_redemptionId] = _isRedeemed;
+        if (IERC165(_contractAddress).supportsInterface(erc6672Interface)) {
+            if (_isRedeemed) {
+                IERC6672(_contractAddress).redeem(
+                    _redemptionId,
+                    _tokenId,
+                    "Redeem With Operator admin"
+                );
+            } else {
+                IERC6672(_contractAddress).cancel(
+                    _redemptionId,
+                    _tokenId,
+                    "Cancel With Operator admin"
+                );
+            }
+        }
     }
 
     // others
