@@ -10,7 +10,8 @@ dotenv.config();
 const accounts = [
   `0x${process.env.REDEEM_PROTOCOL_OPERATOR}`,
   `0x${process.env.REDEEM_SYSTEM_OPERATOR}`,
-  `0x${process.env.CLIENT_OPERATOR}`
+  `0x${process.env.CLIENT_OPERATOR}`,
+  `0x${process.env.POLYGON_EOA}`
 ]
 
 const config: HardhatUserConfig = {
@@ -35,6 +36,10 @@ const config: HardhatUserConfig = {
     },
     polygon: {
       url: process.env.POLYGON_PROVIDER_URL,
+      accounts: accounts
+    },
+    tt: {
+      url: process.env.TT_PROVIDER_URL,
       accounts: accounts
     }
   }

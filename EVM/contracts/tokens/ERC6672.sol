@@ -46,13 +46,6 @@ abstract contract ERC6672 is ERC721, IERC6672 {
         );
         _update(_operator, _redemptionId, _tokenId, _memo, true);
         redemptions[_operator][_tokenId].add(_redemptionId);
-        emit Redeem(
-            _operator,
-            _tokenId,
-            ownerOf(_tokenId),
-            _redemptionId,
-            _memo
-        );
     }
 
     function cancel(
@@ -67,7 +60,6 @@ abstract contract ERC6672 is ERC721, IERC6672 {
         );
         _update(_operator, _redemptionId, _tokenId, _memo, false);
         _removeRedemption(_operator, _redemptionId, _tokenId);
-        emit Cancel(_operator, _tokenId, _redemptionId, _memo);
     }
 
     function _isRedeemed(

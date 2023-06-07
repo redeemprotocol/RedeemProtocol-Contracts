@@ -29,5 +29,5 @@
     "main": "index.js",
     "name": "@redeemprotocol/contracts",
     "repository": "git@github.com:redeemprotocol/RedeemProtocol-Contracts.git",
-    "version": "1.0.6"
+    "version": "1.0.7"
 }

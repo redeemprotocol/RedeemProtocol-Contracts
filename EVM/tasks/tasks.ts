@@ -91,11 +91,11 @@ task("deployForwarder", "Deploy Forwarder").setAction(
 );
 
 task("deployFactory", "Deploy Factory")
-    .addParam("setupFee", "Set up fee amount", "1", types.string)
-    .addParam("updateFee", "Update fee amount", "1", types.string)
-    .addParam("redeemFee", "Update fee amount", "1", types.string)
-    .addParam("feeTokenAddress", "Fee token address", process.env.MUMBAI_FEE_TOKEN, types.string)
-    .addParam("feeReceiverAddress", "Fee receiver address", undefined, types.string)
+    .addParam("setupFee", "Set up fee amount", "1200", types.string)
+    .addParam("updateFee", "Update fee amount", "120", types.string)
+    .addParam("redeemFee", "redeem fee amount", "1", types.string)
+    .addParam("feeTokenAddress", "Fee token address", process.env.POLYGON_FEE_TOKEN, types.string)
+    .addParam("feeReceiverAddress", "Fee receiver address", process.env.POLYGON_FEE_RECEIVER, types.string)
     .setAction(
         async ({
             setupFee, updateFee, redeemFee, feeTokenAddress, feeReceiverAddress
@@ -104,7 +104,7 @@ task("deployFactory", "Deploy Factory")
         }, { ethers, run }) => {
             await run("compile");
             try {
-                const [redeemProtocolOperator] = await ethers.getSigners();
+                const [redeemProtocolOperator, redeemSystemOpeator] = await ethers.getSigners();
                 const Factory = await ethers.getContractFactory("RedeemProtocolFactory");
                 const redeemProtocolFactory = await Factory.connect(redeemProtocolOperator).deploy(
                     {
@@ -122,8 +122,12 @@ task("deployFactory", "Deploy Factory")
                     feeReceiverAddress
                 );
                 await redeemProtocolFactory.deployed();
-
                 console.log("RedeemProtocolFactory deployed:", redeemProtocolFactory.address);
+                await redeemProtocolFactory.setDesignateSetupFee(
+                    redeemSystemOpeator.address,
+                    ethers.utils.parseEther("1"),
+                    feeTokenAddress
+                );
                 return redeemProtocolFactory.address
             } catch (message) {
                 console.error(message);
@@ -132,7 +136,7 @@ task("deployFactory", "Deploy Factory")
     );
 
 task("grantRoles", "Grant roles for RedeemSystemOperator")
-    .addParam("factoryAddress", "RedeemProtocolFactory address", process.env.MUMBAI_FACTORY, types.string)
+    .addParam("factoryAddress", "RedeemProtocolFactory address", process.env.POLYGON_FACTORY, types.string)
     .setAction(
         async ({
             factoryAddress
@@ -157,10 +161,10 @@ task("grantRoles", "Grant roles for RedeemSystemOperator")
     );
 
 task("approveTokenFee", "Approve token spender")
-    .addParam("tokenAddress", "Token address", process.env.MUMBAI_FEE_TOKEN, types.string)
-    .addParam("factory", "Factory address", process.env.MUMBAI_FACTORY, types.string)
-    .addParam("forwarder", "Factory address", process.env.MUMBAI_FORWARDER, types.string)
-    .addParam("amount", "Amount", '10', types.string)
+    .addParam("tokenAddress", "Token address", process.env.POLYGON_FEE_TOKEN, types.string)
+    .addParam("factory", "Factory address", process.env.POLYGON_FACTORY, types.string)
+    .addParam("forwarder", "Factory address", process.env.POLYGON_FORWARDER, types.string)
+    .addParam("amount", "Amount", '10000', types.string)
     .setAction(
         async ({
             tokenAddress, factory, forwarder, amount
@@ -181,11 +185,11 @@ task("approveTokenFee", "Approve token spender")
     )
 
 task("createRealm", "Create realm")
-    .addParam("factoryAddress", "RedeemProtocolFactory address", process.env.MUMBAI_FACTORY, types.string)
+    .addParam("factoryAddress", "RedeemProtocolFactory address", process.env.POLYGON_FACTORY, types.string)
     .addParam("redeemMethod", "RedeemMethod: 0 - mark/ 1 - transfer/ 2 - burn", 0, types.int)
     .addParam("redeemAmount", "Redeem amount", '1', types.string)
     .addParam("tokenReceiver", "Redeem with transfer to that address", undefined, types.string, true)
-    .addParam("forwarder", "Forwarder address", process.env.MUMBAI_FORWARDER, types.string)
+    .addParam("forwarder", "Forwarder address", process.env.POLYGON_FORWARDER, types.string)
     .setAction(
         async ({
             factoryAddress, redeemMethod, redeemAmount, tokenReceiver, forwarder
@@ -210,6 +214,9 @@ task("createRealm", "Create realm")
                 const receipt = await transaction.wait();
                 const realmCreatedEvent = receipt.events?.filter((x) => { return x.event == "RealmCreated" })[0];
                 const realmAddress: string = realmCreatedEvent?.args?.realm;
+                const redeemProtocolRealm = await ethers.getContractAt("RedeemProtocolRealm", realmAddress);
+                const operator = await redeemProtocolRealm.OPERATOR();
+                await redeemProtocolRealm.connect(redeemSystemOperator).grantRole(operator, redeemSystemOperator.address);
                 console.log(`Realm deployed: ${realmAddress}`);
                 return { realmAddress };
             } catch (message) {
@@ -219,7 +226,12 @@ task("createRealm", "Create realm")
     );
 
 task("accounts", "List all of accounts")
-    .setAction(async (_args, { ethers, run }) => {
+    .addParam("tokenAddress", "token address", process.env.POLYGON_FEE_TOKEN, types.string)
+    .setAction(async ({
+        tokenAddress
+    }: {
+        tokenAddress: string
+    }, { ethers, run }) => {
         const [redeemProtocolOperator, redeemSystemOperator, clientOperator] = await ethers.getSigners();
         await Promise.all(
             [
@@ -231,6 +243,15 @@ task("accounts", "List all of accounts")
                 }),
                 run("balanceOf", { address: clientOperator.address }).then((balance) => {
                     console.log(`Client EOA:${clientOperator.address} - $${ethers.utils.formatUnits(balance)}`);
+                }),
+                run("balanceOfERC20", { address: redeemProtocolOperator.address, tokenAddress: tokenAddress }).then((balance) => {
+                    console.log(`RedeemProtocolOperator:${redeemProtocolOperator.address} - fee token $${ethers.utils.formatUnits(balance)}`);
+                }),
+                run("balanceOfERC20", { address: redeemSystemOperator.address, tokenAddress: tokenAddress }).then((balance) => {
+                    console.log(`RedeemSystemOperator:${redeemSystemOperator.address} - fee token $${ethers.utils.formatUnits(balance)}`);
+                }),
+                run("balanceOfERC20", { address: clientOperator.address, tokenAddress: tokenAddress }).then((balance) => {
+                    console.log(`Client EOA:${clientOperator.address} - fee token $${ethers.utils.formatUnits(balance)}`);
                 })
             ]
         );
@@ -244,6 +265,23 @@ task("balanceOf", "Get balance of account")
         address: string
     }, { ethers, run }) => {
         const balance = await ethers.provider.getBalance(address);
+        return balance;
+    });
+
+task("balanceOfERC20", "Get balance of account")
+    .addParam("address", "Address", undefined, types.string)
+    .addParam("tokenAddress", "token address", undefined, types.string)
+    .setAction(async ({
+        address, tokenAddress
+    }: {
+        address: string,
+        tokenAddress: string
+    }, { ethers, run }) => {
+        const balanceOfAbi = new ethers.utils.Interface([
+            "function balanceOf(address account) public view returns (uint256)"
+        ]);
+        const contract = new ethers.Contract(tokenAddress, balanceOfAbi, ethers.provider);
+        const balance = await contract.balanceOf(address);
         return balance;
     });
 
@@ -418,6 +456,57 @@ task("isRedeemable", "Check an NFT whether is redeemable or not")
             );
             console.log(`Contract: ${contractAddress}\nToken id: ${tokenId}\nCustom id: ${customId} is ${isRedeemable ? '' : 'not '}redeemable.`);
             return isRedeemable;
+        } catch (message) {
+            console.error(message);
+        }
+    });
+
+task("isRedeemable2", "Check an NFT whether is redeemable or not")
+    .addParam("realmAddress", "Realm address", process.env.MUMBAI_REALM, types.string, true)
+    .addParam("tokenId", "Token id", 0, types.int, true)
+    .addParam("contractAddress", "NFT contract address", process.env.MUMBAI_NFT, types.string, true)
+    .addParam("customId", "Custom id", undefined, types.string)
+    .setAction(async ({
+        realmAddress, tokenId, contractAddress, customId
+    }: {
+        realmAddress: string, tokenId: number, contractAddress: string, customId: string
+    }, { ethers, run }) => {
+        try {
+            const realm = await ethers.getContractAt("RedeemProtocolRealm", realmAddress);
+            const isRedeemable = await realm.isRedeemable(
+                contractAddress,
+                tokenId,
+                customId
+            );
+            console.log(`Contract: ${contractAddress}\nToken id: ${tokenId}\nCustom id: ${customId} is ${isRedeemable ? '' : 'not '}redeemable.`);
+            return isRedeemable;
+        } catch (message) {
+            console.error(message);
+        }
+    });
+
+task("editRedemption", "Redeem with mark via Forwarder")
+    .addParam("realmAddress", "Realm address", process.env.MUMBAI_REALM, types.string, true)
+    .addParam("contractAddress", "NFT contract address", process.env.MUMBAI_NFT, types.string, true)
+    .addParam("tokenId", "Token id", 0, types.int, true)
+    .addParam("redemptionId", "Custom Id", undefined, types.string)
+    .addParam("isRedeemed", "is Redeemed", true, types.boolean)
+    .setAction(async ({
+        realmAddress, contractAddress, tokenId, redemptionId, isRedeemed
+    }: {
+        realmAddress: string,
+        contractAddress: string,
+        tokenId: number,
+        redemptionId: string,
+        isRedeemed: boolean
+    }, { ethers, run }) => {
+        const [redeemProtocolOperator, redeemSystemOperator, clientOperator] = await ethers.getSigners();
+        try {
+            const id = defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String(redemptionId)])
+            const realm = await ethers.getContractAt("RedeemProtocolRealm", realmAddress);
+            const transaction = await realm.connect(redeemSystemOperator).editRedemption(contractAddress, tokenId, id, isRedeemed);
+            await transaction.wait();
+            console.log(`Contract: ${contractAddress}\nToken id: ${tokenId}\nRedemption id: ${redemptionId} isRedeemed changes to ${isRedeemed}.`);
         } catch (message) {
             console.error(message);
         }
