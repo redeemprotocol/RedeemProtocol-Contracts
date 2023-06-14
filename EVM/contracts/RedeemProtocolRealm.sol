@@ -125,10 +125,12 @@ contract RedeemProtocolRealm is
             isRedeemable(_contractAddress, _tokenId, _redemptionId),
             "Realm: token has been redeemed"
         );
-        require(
-            IERC721(_contractAddress).ownerOf(_tokenId) == _msgSender(),
-            "Realm: not token owner"
-        );
+        if (hasRole(OPERATOR, msg.sender) == false) {
+            require(
+                IERC721(_contractAddress).ownerOf(_tokenId) == _msgSender(),
+                "Realm: not token owner"
+            );
+        }
 
         isRedeemed[_contractAddress][_tokenId][_redemptionId] = true;
 

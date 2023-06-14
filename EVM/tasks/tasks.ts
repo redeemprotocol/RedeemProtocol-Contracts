@@ -1,6 +1,7 @@
 import { task, types } from "hardhat/config";
 import { defaultAbiCoder } from "@ethersproject/abi";
 import dotenv from 'dotenv';
+import { token } from "../typechain-types/@openzeppelin/contracts";
 
 dotenv.config();
 
@@ -94,8 +95,8 @@ task("deployFactory", "Deploy Factory")
     .addParam("setupFee", "Set up fee amount", "1200", types.string)
     .addParam("updateFee", "Update fee amount", "120", types.string)
     .addParam("redeemFee", "redeem fee amount", "1", types.string)
-    .addParam("feeTokenAddress", "Fee token address", process.env.POLYGON_FEE_TOKEN, types.string)
-    .addParam("feeReceiverAddress", "Fee receiver address", process.env.POLYGON_FEE_RECEIVER, types.string)
+    .addParam("feeTokenAddress", "Fee token address", process.env.TT_FEE_TOKEN, types.string)
+    .addParam("feeReceiverAddress", "Fee receiver address", process.env.TT_FEE_RECEIVER, types.string)
     .setAction(
         async ({
             setupFee, updateFee, redeemFee, feeTokenAddress, feeReceiverAddress
@@ -136,7 +137,7 @@ task("deployFactory", "Deploy Factory")
     );
 
 task("grantRoles", "Grant roles for RedeemSystemOperator")
-    .addParam("factoryAddress", "RedeemProtocolFactory address", process.env.POLYGON_FACTORY, types.string)
+    .addParam("factoryAddress", "RedeemProtocolFactory address", process.env.TT_FACTORY, types.string)
     .setAction(
         async ({
             factoryAddress
@@ -160,10 +161,10 @@ task("grantRoles", "Grant roles for RedeemSystemOperator")
         }
     );
 
-task("approveTokenFee", "Approve token spender")
-    .addParam("tokenAddress", "Token address", process.env.POLYGON_FEE_TOKEN, types.string)
-    .addParam("factory", "Factory address", process.env.POLYGON_FACTORY, types.string)
-    .addParam("forwarder", "Factory address", process.env.POLYGON_FORWARDER, types.string)
+task("approveFeeToken", "Approve token spender")
+    .addParam("tokenAddress", "Token address", process.env.TT_FEE_TOKEN, types.string)
+    .addParam("factory", "Factory address", process.env.TT_FACTORY, types.string)
+    .addParam("forwarder", "Factory address", process.env.TT_FORWARDER, types.string)
     .addParam("amount", "Amount", '10000', types.string)
     .setAction(
         async ({
@@ -173,10 +174,33 @@ task("approveTokenFee", "Approve token spender")
         }, { ethers, run }) => {
             await run("compile");
             try {
-                const [_, redeemSystemOperator, clientOperator] = await ethers.getSigners();
+                const [_, redeemSystemOperator, clientOperator, eoa, operator] = await ethers.getSigners();
                 const feeToken = await ethers.getContractAt("RPC20", tokenAddress);
                 await feeToken.connect(redeemSystemOperator).approve(factory, ethers.utils.parseEther(amount));
                 await feeToken.connect(clientOperator).approve(forwarder, ethers.utils.parseEther(amount));
+                await feeToken.connect(operator).approve(forwarder, ethers.utils.parseEther(amount));
+                console.log('Approve token fee successfully.');
+            } catch (message) {
+                console.error(message);
+            }
+        }
+    )
+
+task("approveOperator", "Approve token spender")
+    .addParam("tokenAddress", "Token address", process.env.TT_FEE_TOKEN, types.string)
+    .addParam("realmAddress", "Factory address", process.env.TT_REALM, types.string)
+    .addParam("amount", "Amount", '10000', types.string)
+    .setAction(
+        async ({
+            tokenAddress, realmAddress, amount
+        }: {
+            tokenAddress: string, realmAddress: string, amount: string
+        }, { ethers, run }) => {
+            await run("compile");
+            try {
+                const [_, redeemSystemOperator, clientOperator, eoa, operator] = await ethers.getSigners();
+                const feeToken = await ethers.getContractAt("RPC20", tokenAddress);
+                await feeToken.connect(operator).approve(realmAddress, ethers.utils.parseEther(amount));
                 console.log('Approve token fee successfully.');
             } catch (message) {
                 console.error(message);
@@ -185,11 +209,11 @@ task("approveTokenFee", "Approve token spender")
     )
 
 task("createRealm", "Create realm")
-    .addParam("factoryAddress", "RedeemProtocolFactory address", process.env.POLYGON_FACTORY, types.string)
+    .addParam("factoryAddress", "RedeemProtocolFactory address", process.env.TT_FACTORY, types.string)
     .addParam("redeemMethod", "RedeemMethod: 0 - mark/ 1 - transfer/ 2 - burn", 0, types.int)
     .addParam("redeemAmount", "Redeem amount", '1', types.string)
     .addParam("tokenReceiver", "Redeem with transfer to that address", undefined, types.string, true)
-    .addParam("forwarder", "Forwarder address", process.env.POLYGON_FORWARDER, types.string)
+    .addParam("forwarder", "Forwarder address", process.env.TT_FORWARDER, types.string)
     .setAction(
         async ({
             factoryAddress, redeemMethod, redeemAmount, tokenReceiver, forwarder
@@ -199,7 +223,7 @@ task("createRealm", "Create realm")
             await run("compile");
             const zeroBytes32 = ethers.utils.defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('')]);
             try {
-                const [_, redeemSystemOperator] = await ethers.getSigners();
+                const [_, redeemSystemOperator, clientOperator, eoa, operator] = await ethers.getSigners();
                 const redeemProtocolFactory = await ethers.getContractAt("RedeemProtocolFactory", factoryAddress);
                 const transaction = await redeemProtocolFactory.connect(redeemSystemOperator).createRealm(
                     redeemMethod,
@@ -215,8 +239,9 @@ task("createRealm", "Create realm")
                 const realmCreatedEvent = receipt.events?.filter((x) => { return x.event == "RealmCreated" })[0];
                 const realmAddress: string = realmCreatedEvent?.args?.realm;
                 const redeemProtocolRealm = await ethers.getContractAt("RedeemProtocolRealm", realmAddress);
-                const operator = await redeemProtocolRealm.OPERATOR();
-                await redeemProtocolRealm.connect(redeemSystemOperator).grantRole(operator, redeemSystemOperator.address);
+                const operatorRole = await redeemProtocolRealm.OPERATOR();
+                await redeemProtocolRealm.connect(redeemSystemOperator).grantRole(operatorRole, redeemSystemOperator.address);
+                await redeemProtocolRealm.connect(redeemSystemOperator).grantRole(operatorRole, operator.address);
                 console.log(`Realm deployed: ${realmAddress}`);
                 return { realmAddress };
             } catch (message) {
@@ -225,33 +250,58 @@ task("createRealm", "Create realm")
         }
     );
 
+task("getFeeToken", "Get fee token address")
+    .addParam("realmAddress", "Realm address", process.env.TT_REALM, types.string)
+    .addParam("forwarderAddress", "Realm address", process.env.TT_FORWARDER, types.string)
+    .setAction(async ({
+        realmAddress, forwarderAddress
+    }: {
+        realmAddress: string, forwarderAddress: string
+    }, { ethers, run }) => {
+        await run("compile");
+        const realm = await ethers.getContractAt("RedeemProtocolRealm", realmAddress);
+        console.log(await realm.isTrustedForwarder(forwarderAddress));
+    })
+
 task("accounts", "List all of accounts")
-    .addParam("tokenAddress", "token address", process.env.POLYGON_FEE_TOKEN, types.string)
+    .addParam("tokenAddress", "token address", process.env.TT_FEE_TOKEN, types.string)
     .setAction(async ({
         tokenAddress
     }: {
         tokenAddress: string
     }, { ethers, run }) => {
-        const [redeemProtocolOperator, redeemSystemOperator, clientOperator] = await ethers.getSigners();
+        const [redeemProtocolOperator, redeemSystemOperator, clientOperator, eoa, operator] = await ethers.getSigners();
         await Promise.all(
             [
                 run("balanceOf", { address: redeemProtocolOperator.address }).then((balance) => {
-                    console.log(`RedeemProtocolOperator:${redeemProtocolOperator.address} - $${ethers.utils.formatUnits(balance)}`);
+                    console.log(`RedeemProtocolOperator: ${redeemProtocolOperator.address} - $${ethers.utils.formatUnits(balance)}`);
                 }),
                 run("balanceOf", { address: redeemSystemOperator.address }).then((balance) => {
-                    console.log(`RedeemSystemOperator:${redeemSystemOperator.address} - $${ethers.utils.formatUnits(balance)}`);
+                    console.log(`RedeemSystemOperator: ${redeemSystemOperator.address} - $${ethers.utils.formatUnits(balance)}`);
                 }),
                 run("balanceOf", { address: clientOperator.address }).then((balance) => {
-                    console.log(`Client EOA:${clientOperator.address} - $${ethers.utils.formatUnits(balance)}`);
+                    console.log(`Client EOA: ${clientOperator.address} - $${ethers.utils.formatUnits(balance)}`);
+                }),
+                run("balanceOf", { address: eoa.address }).then((balance) => {
+                    console.log(`EOA: ${eoa.address} - $${ethers.utils.formatUnits(balance)}`);
+                }),
+                run("balanceOf", { address: operator.address }).then((balance) => {
+                    console.log(`OPERATOR: ${operator.address} - $${ethers.utils.formatUnits(balance)}`);
                 }),
                 run("balanceOfERC20", { address: redeemProtocolOperator.address, tokenAddress: tokenAddress }).then((balance) => {
-                    console.log(`RedeemProtocolOperator:${redeemProtocolOperator.address} - fee token $${ethers.utils.formatUnits(balance)}`);
+                    console.log(`RedeemProtocolOperator: ${redeemProtocolOperator.address} - fee token $${ethers.utils.formatUnits(balance)}`);
                 }),
                 run("balanceOfERC20", { address: redeemSystemOperator.address, tokenAddress: tokenAddress }).then((balance) => {
-                    console.log(`RedeemSystemOperator:${redeemSystemOperator.address} - fee token $${ethers.utils.formatUnits(balance)}`);
+                    console.log(`RedeemSystemOperator: ${redeemSystemOperator.address} - fee token $${ethers.utils.formatUnits(balance)}`);
                 }),
                 run("balanceOfERC20", { address: clientOperator.address, tokenAddress: tokenAddress }).then((balance) => {
-                    console.log(`Client EOA:${clientOperator.address} - fee token $${ethers.utils.formatUnits(balance)}`);
+                    console.log(`Client EOA: ${clientOperator.address} - fee token $${ethers.utils.formatUnits(balance)}`);
+                }),
+                run("balanceOfERC20", { address: eoa.address, tokenAddress: tokenAddress }).then((balance) => {
+                    console.log(`EOA: ${eoa.address} - fee token $${ethers.utils.formatUnits(balance)}`);
+                }),
+                run("balanceOfERC20", { address: operator.address, tokenAddress: tokenAddress }).then((balance) => {
+                    console.log(`OPERATOR: ${operator.address} - fee token $${ethers.utils.formatUnits(balance)}`);
                 })
             ]
         );
@@ -277,6 +327,9 @@ task("balanceOfERC20", "Get balance of account")
         address: string,
         tokenAddress: string
     }, { ethers, run }) => {
+        if (tokenAddress === "" || tokenAddress === undefined) {
+            return 0;
+        }
         const balanceOfAbi = new ethers.utils.Interface([
             "function balanceOf(address account) public view returns (uint256)"
         ]);
@@ -286,7 +339,7 @@ task("balanceOfERC20", "Get balance of account")
     });
 
 task("mintFeeToken", "Mint fee token to address")
-    .addParam("contractAddress", "Token addresss", undefined, types.string)
+    .addParam("contractAddress", "Token addresss", process.env.TT_FEE_TOKEN, types.string)
     .addParam("receiver", "Receiver address", undefined, types.string)
     .setAction(async ({
         contractAddress, receiver
@@ -340,12 +393,12 @@ task("mint721", "Mint 721 to address")
     });
 
 task("redeemWithMark", "Redeem with mark via Forwarder")
-    .addParam("forwarderAddress", "Forwarder address", process.env.MUMBAI_FORWARDER, types.string, true)
-    .addParam("realmAddress", "Realm address", process.env.MUMBAI_REALM, types.string, true)
-    .addParam("contractAddress", "NFT contract address", process.env.MUMBAI_NFT, types.string, true)
+    .addParam("forwarderAddress", "Forwarder address", process.env.TT_FORWARDER, types.string, true)
+    .addParam("realmAddress", "Realm address", process.env.TT_REALM, types.string, true)
+    .addParam("contractAddress", "NFT contract address", process.env.TT_NFT, types.string, true)
     .addParam("tokenId", "Token id", 0, types.int, true)
     .addParam("customId", "Custom Id", undefined, types.string)
-    .addParam("domainHash", "Domain hash", process.env.MUMBAI_DOMAIN_HASH, types.string, true)
+    .addParam("domainHash", "Domain hash", process.env.TT_DOMAIN_HASH, types.string, true)
     .addParam("requestTypeHash", "Request type hash", process.env.REQUEST_TYPE_HASH, types.string, true)
     .setAction(async ({
         forwarderAddress, realmAddress, contractAddress, tokenId, customId, domainHash, requestTypeHash
@@ -358,13 +411,13 @@ task("redeemWithMark", "Redeem with mark via Forwarder")
         domainHash: string,
         requestTypeHash: string
     }, { ethers, run }) => {
-        const [redeemProtocolOperator, _, clientOperator] = await ethers.getSigners();
+        const [redeemProtocol, redeemSystem, clientOperator, eoa, operator] = await ethers.getSigners();
         const redeemWithMarkABI = new ethers.utils.Interface([
             "function redeemWithMark(address _contractAddress, uint256 _tokenId, bytes32 _customId, uint _deadline, uint8 _v, bytes32 _r, bytes32 _s)"
         ]);
         const zeroBytes32 = ethers.utils.defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String('')]);
         try {
-            const forwarder = await ethers.getContractAt("PassportForwarder", forwarderAddress)
+            const forwarder = await ethers.getContractAt("PassportForwarder", forwarderAddress);
             const domain = {
                 name: domainName,
                 version: domainVersion,
@@ -380,22 +433,33 @@ task("redeemWithMark", "Redeem with mark via Forwarder")
                 zeroBytes32,
                 zeroBytes32
             ]);
-            const nonce = Number(await forwarder.connect(redeemProtocolOperator).getNonce(redeemProtocolOperator.address));
+            const realm = await ethers.getContractAt("RedeemProtocolRealm", realmAddress);
+            const nonce = Number(await forwarder.connect(clientOperator).getNonce(clientOperator.address));
+            const gas = await realm.connect(operator).estimateGas.redeemWithMark(
+                contractAddress,
+                tokenId,
+                defaultAbiCoder.encode(['bytes32'], [ethers.utils.formatBytes32String(customId)]),
+                0,
+                0,
+                zeroBytes32,
+                zeroBytes32
+            );
+            console.log('gas estimate:', gas);
             const message = {
-                from: redeemProtocolOperator.address,
+                from: clientOperator.address,
                 to: realmAddress,
                 nonce: nonce,
-                gas: 210000,
+                gas: gas,
                 value: 0,
                 data: data,
                 validUntilTime: Math.round(Date.now() / 1000 + 60)
             };
-            const signature = await redeemProtocolOperator._signTypedData(
+            const signature = await clientOperator._signTypedData(
                 domain,
                 forwarderTypes,
                 message
             );
-            const transaction = await forwarder.connect(clientOperator).execute(
+            const transaction = await forwarder.connect(eoa).execute(
                 message,
                 domainHash,
                 requestTypeHash,
@@ -403,15 +467,7 @@ task("redeemWithMark", "Redeem with mark via Forwarder")
                 signature
             );
             const receipt = await transaction.wait();
-            const redeemEvent = receipt.events?.filter((x) => { return x.event == "Redeemed" })[0];
             console.log("Redeem successfully:", receipt.transactionHash);
-            console.log('redeemEvent:', redeemEvent);
-            console.log("contract addres:", redeemEvent?.args?.contractAddress);
-            console.log("token id:", redeemEvent?.args?.tokenId);
-            console.log("redeem method:", redeemEvent?.args?.redeemMethod);
-            console.log("redeemer:", redeemEvent?.args?.redeemer);
-            console.log("custom id:", redeemEvent?.args?.customId);
-            console.log("custom id value:", ethers.utils.parseBytes32String(redeemEvent?.args?.customId));
         } catch (message) {
             console.error(message);
         }

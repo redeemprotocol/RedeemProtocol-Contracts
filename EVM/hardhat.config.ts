@@ -11,7 +11,8 @@ const accounts = [
   `0x${process.env.REDEEM_PROTOCOL_OPERATOR}`,
   `0x${process.env.REDEEM_SYSTEM_OPERATOR}`,
   `0x${process.env.CLIENT_OPERATOR}`,
-  `0x${process.env.POLYGON_EOA}`
+  `0x${process.env.EOA}`,
+  `0x${process.env.OPERATOR}`
 ]
 
 const config: HardhatUserConfig = {
@@ -40,6 +41,10 @@ const config: HardhatUserConfig = {
     },
     tt: {
       url: process.env.TT_PROVIDER_URL,
+      accounts: accounts
+    },
+    tttest: {
+      url: process.env.TTTEST_PROVIDER_URL,
       accounts: accounts
     }
   }

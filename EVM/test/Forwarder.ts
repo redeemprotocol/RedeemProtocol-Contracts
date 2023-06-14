@@ -99,6 +99,7 @@ describe("PassportForwarder", function () {
         )).realmAddress;
         realm = await ethers.getContractAt("RedeemProtocolRealm", realmAddress);
         await feeToken.connect(clientOperator).approve(forwarder.address, ethers.utils.parseEther("1"));
+        await realm.connect(realmOperator).grantOperator(clientOperator.address);
     }
 
     async function mintNFT() {
@@ -241,11 +242,25 @@ describe("PassportForwarder", function () {
                 zeroBytes32,
                 zeroBytes32
             ]);
+            const redeemAmount = (await realm.redeemAmount());
+            await feeToken.connect(clientOperator).approve(
+                realm.address,
+                redeemAmount
+            );
+            const gasEstimate = await realm.connect(clientOperator).estimateGas.redeemWithMark(
+                nft.address,
+                tokenId,
+                customId,
+                0,
+                0,
+                zeroBytes32,
+                zeroBytes32
+            );
             const message = {
                 from: endUser.address,
                 to: realm.address,
                 nonce: Number(await forwarder.connect(clientOperator).getNonce(clientOperator.address)),
-                gas: 210000,
+                gas: gasEstimate,
                 value: 0,
                 data: data,
                 validUntilTime: Math.round(Date.now() / 1000 + 30000)
