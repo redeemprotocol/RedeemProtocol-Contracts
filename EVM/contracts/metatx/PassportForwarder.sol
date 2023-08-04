@@ -2,7 +2,7 @@ pragma solidity ^0.8.16;
 pragma abicoder v2;
 
 // solhint-disable not-rely-on-time
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: MIT
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";

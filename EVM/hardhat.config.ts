@@ -27,6 +27,10 @@ const config: HardhatUserConfig = {
   },
   networks: {
     hardhat: {},
+    eth: {
+      url: process.env.ETH_PROVIDER_URL,
+      accounts: accounts
+    },
     polygon_mumbai: {
       url: process.env.MUMBAI_PROVIDER_URL,
       accounts: accounts

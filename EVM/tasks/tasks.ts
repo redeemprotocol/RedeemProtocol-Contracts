@@ -95,8 +95,8 @@ task("deployFactory", "Deploy Factory")
     .addParam("setupFee", "Set up fee amount", "1200", types.string)
     .addParam("updateFee", "Update fee amount", "120", types.string)
     .addParam("redeemFee", "redeem fee amount", "1", types.string)
-    .addParam("feeTokenAddress", "Fee token address", process.env.TT_FEE_TOKEN, types.string)
-    .addParam("feeReceiverAddress", "Fee receiver address", process.env.TT_FEE_RECEIVER, types.string)
+    .addParam("feeTokenAddress", "Fee token address", process.env.ETH_FEE_TOKEN, types.string)
+    .addParam("feeReceiverAddress", "Fee receiver address", process.env.ETH_FEE_RECEIVER, types.string)
     .setAction(
         async ({
             setupFee, updateFee, redeemFee, feeTokenAddress, feeReceiverAddress
@@ -126,7 +126,7 @@ task("deployFactory", "Deploy Factory")
                 console.log("RedeemProtocolFactory deployed:", redeemProtocolFactory.address);
                 await redeemProtocolFactory.setDesignateSetupFee(
                     redeemSystemOpeator.address,
-                    ethers.utils.parseEther("1"),
+                    ethers.utils.parseEther("0"),
                     feeTokenAddress
                 );
                 return redeemProtocolFactory.address
@@ -137,7 +137,7 @@ task("deployFactory", "Deploy Factory")
     );
 
 task("grantRoles", "Grant roles for RedeemSystemOperator")
-    .addParam("factoryAddress", "RedeemProtocolFactory address", process.env.TT_FACTORY, types.string)
+    .addParam("factoryAddress", "RedeemProtocolFactory address", process.env.ETH_FACTORY, types.string)
     .setAction(
         async ({
             factoryAddress
@@ -162,9 +162,9 @@ task("grantRoles", "Grant roles for RedeemSystemOperator")
     );
 
 task("approveFeeToken", "Approve token spender")
-    .addParam("tokenAddress", "Token address", process.env.TT_FEE_TOKEN, types.string)
-    .addParam("factory", "Factory address", process.env.TT_FACTORY, types.string)
-    .addParam("forwarder", "Factory address", process.env.TT_FORWARDER, types.string)
+    .addParam("tokenAddress", "Token address", process.env.ETH_FEE_TOKEN, types.string)
+    .addParam("factory", "Factory address", process.env.ETH_FACTORY, types.string)
+    .addParam("forwarder", "Factory address", process.env.ETH_FORWARDER, types.string)
     .addParam("amount", "Amount", '10000', types.string)
     .setAction(
         async ({
@@ -187,8 +187,9 @@ task("approveFeeToken", "Approve token spender")
     )
 
 task("approveOperator", "Approve token spender")
-    .addParam("tokenAddress", "Token address", process.env.TT_FEE_TOKEN, types.string)
-    .addParam("realmAddress", "Factory address", process.env.TT_REALM, types.string)
+    .addParam("tokenAddress", "Token address", process.env.ETH_FEE_TOKEN, types.string)
+    .addParam("realmAddress", "Factory address", process.env.ETH_REALM, types.string)
+    .addParam("forwarderAddress", "Factory address", process.env.ETH_FORWARDER, types.string)
     .addParam("amount", "Amount", '10000', types.string)
     .setAction(
         async ({
@@ -209,11 +210,11 @@ task("approveOperator", "Approve token spender")
     )
 
 task("createRealm", "Create realm")
-    .addParam("factoryAddress", "RedeemProtocolFactory address", process.env.TT_FACTORY, types.string)
+    .addParam("factoryAddress", "RedeemProtocolFactory address", process.env.ETH_FACTORY, types.string)
     .addParam("redeemMethod", "RedeemMethod: 0 - mark/ 1 - transfer/ 2 - burn", 0, types.int)
     .addParam("redeemAmount", "Redeem amount", '1', types.string)
     .addParam("tokenReceiver", "Redeem with transfer to that address", undefined, types.string, true)
-    .addParam("forwarder", "Forwarder address", process.env.TT_FORWARDER, types.string)
+    .addParam("forwarder", "Forwarder address", process.env.ETH_FORWARDER, types.string)
     .setAction(
         async ({
             factoryAddress, redeemMethod, redeemAmount, tokenReceiver, forwarder
@@ -251,8 +252,8 @@ task("createRealm", "Create realm")
     );
 
 task("getFeeToken", "Get fee token address")
-    .addParam("realmAddress", "Realm address", process.env.TT_REALM, types.string)
-    .addParam("forwarderAddress", "Realm address", process.env.TT_FORWARDER, types.string)
+    .addParam("realmAddress", "Realm address", process.env.ETH_REALM, types.string)
+    .addParam("forwarderAddress", "Realm address", process.env.ETH_FORWARDER, types.string)
     .setAction(async ({
         realmAddress, forwarderAddress
     }: {
@@ -264,7 +265,7 @@ task("getFeeToken", "Get fee token address")
     })
 
 task("accounts", "List all of accounts")
-    .addParam("tokenAddress", "token address", process.env.TT_FEE_TOKEN, types.string)
+    .addParam("tokenAddress", "token address", process.env.ETH_FEE_TOKEN, types.string)
     .setAction(async ({
         tokenAddress
     }: {
@@ -339,7 +340,7 @@ task("balanceOfERC20", "Get balance of account")
     });
 
 task("mintFeeToken", "Mint fee token to address")
-    .addParam("contractAddress", "Token addresss", process.env.TT_FEE_TOKEN, types.string)
+    .addParam("contractAddress", "Token addresss", process.env.ETH_FEE_TOKEN, types.string)
     .addParam("receiver", "Receiver address", undefined, types.string)
     .setAction(async ({
         contractAddress, receiver
@@ -393,12 +394,12 @@ task("mint721", "Mint 721 to address")
     });
 
 task("redeemWithMark", "Redeem with mark via Forwarder")
-    .addParam("forwarderAddress", "Forwarder address", process.env.TT_FORWARDER, types.string, true)
-    .addParam("realmAddress", "Realm address", process.env.TT_REALM, types.string, true)
-    .addParam("contractAddress", "NFT contract address", process.env.TT_NFT, types.string, true)
+    .addParam("forwarderAddress", "Forwarder address", process.env.ETH_FORWARDER, types.string, true)
+    .addParam("realmAddress", "Realm address", process.env.ETH_REALM, types.string, true)
+    .addParam("contractAddress", "NFT contract address", process.env.ETH_NFT, types.string, true)
     .addParam("tokenId", "Token id", 0, types.int, true)
     .addParam("customId", "Custom Id", undefined, types.string)
-    .addParam("domainHash", "Domain hash", process.env.TT_DOMAIN_HASH, types.string, true)
+    .addParam("domainHash", "Domain hash", process.env.ETH_DOMAIN_HASH, types.string, true)
     .addParam("requestTypeHash", "Request type hash", process.env.REQUEST_TYPE_HASH, types.string, true)
     .setAction(async ({
         forwarderAddress, realmAddress, contractAddress, tokenId, customId, domainHash, requestTypeHash
@@ -494,9 +495,9 @@ task("registerDomain", "Register domain separator")
     });
 
 task("isRedeemable", "Check an NFT whether is redeemable or not")
-    .addParam("realmAddress", "Realm address", process.env.MUMBAI_REALM, types.string, true)
+    .addParam("realmAddress", "Realm address", process.env.ETH_REALM, types.string, true)
     .addParam("tokenId", "Token id", 0, types.int, true)
-    .addParam("contractAddress", "NFT contract address", process.env.MUMBAI_NFT, types.string, true)
+    .addParam("contractAddress", "NFT contract address", process.env.ETH_NFT, types.string, true)
     .addParam("customId", "Custom id", undefined, types.string)
     .setAction(async ({
         realmAddress, tokenId, contractAddress, customId
@@ -518,9 +519,9 @@ task("isRedeemable", "Check an NFT whether is redeemable or not")
     });
 
 task("isRedeemable2", "Check an NFT whether is redeemable or not")
-    .addParam("realmAddress", "Realm address", process.env.MUMBAI_REALM, types.string, true)
+    .addParam("realmAddress", "Realm address", process.env.ETH_REALM, types.string, true)
     .addParam("tokenId", "Token id", 0, types.int, true)
-    .addParam("contractAddress", "NFT contract address", process.env.MUMBAI_NFT, types.string, true)
+    .addParam("contractAddress", "NFT contract address", process.env.ETH_NFT, types.string, true)
     .addParam("customId", "Custom id", undefined, types.string)
     .setAction(async ({
         realmAddress, tokenId, contractAddress, customId
@@ -542,8 +543,8 @@ task("isRedeemable2", "Check an NFT whether is redeemable or not")
     });
 
 task("editRedemption", "Redeem with mark via Forwarder")
-    .addParam("realmAddress", "Realm address", process.env.MUMBAI_REALM, types.string, true)
-    .addParam("contractAddress", "NFT contract address", process.env.MUMBAI_NFT, types.string, true)
+    .addParam("realmAddress", "Realm address", process.env.ETH_REALM, types.string, true)
+    .addParam("contractAddress", "NFT contract address", process.env.ETH_NFT, types.string, true)
     .addParam("tokenId", "Token id", 0, types.int, true)
     .addParam("redemptionId", "Custom Id", undefined, types.string)
     .addParam("isRedeemed", "is Redeemed", true, types.boolean)
