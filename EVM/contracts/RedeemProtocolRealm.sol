@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.16;
+pragma solidity ^0.8.16;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/metatx/ERC2771Context.sol";
@@ -278,8 +278,6 @@ contract RedeemProtocolRealm is
             baseRedeemFee.amount
         );
         require(ok, "base redeem fee payment failed");
-
-        IERC721Burnable(_contractAddress).burn(_tokenId);
         if (IERC165(_contractAddress).supportsInterface(erc6672Interface)) {
             IERC6672(_contractAddress).redeem(
                 _redemptionId,
@@ -287,6 +285,8 @@ contract RedeemProtocolRealm is
                 "Redeem With Burn"
             );
         }
+        IERC721Burnable(_contractAddress).burn(_tokenId);
+
         emit Redeemed(
             _contractAddress,
             _tokenId,
